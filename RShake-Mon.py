@@ -44,7 +44,7 @@ def variance( dat ):
     mean += delta/n
     m2 += (delta * (x - mean))
   var = ( m2/(n-1) )
-  return var
+  return (var,mean)
 
 def pspair( elems ):
   "Print out std.dev of 1st & 2nd half of list"
@@ -70,18 +70,33 @@ def avg10( elems ):
 
 def ps( elems ):
   "Print out RMS energy in HighPass and LowPass bands"
-  LPsq = variance(avg10(elems))  # low-pass 0.5-2.5 Hz
-  HP = math.sqrt(abs(variance(elems) - LPsq))   # high-pass 2.5-50 Hz
+  global LPbuf    # circular buffer of 1-second averages
+  global LPidx
+  global LPelems
+  (LPsq,mean) = variance(avg10(elems))  # low-pass 0.5-2.5 Hz
+  (APsq,mean2) =  variance(elems)
+  HP = math.sqrt(abs(APsq - LPsq))   # high-pass 2.5-50 Hz
   LP = math.sqrt(LPsq)
-  print("%.1f, %.1f" % (HP,LP ) )
+  LPbuf[LPidx] = mean
+  LPidx += 1           # crank handle on circular buffer
+  if LPidx == LPelems:
+    LPidx = 0  
+  (LLPvar, mean3) = variance(LPbuf)
+  LLP = math.sqrt( LLPvar ) # low-low-pass: 0.05 - 0.5 Hz
+  print("%.1f, %.1f, %.2f" % (HP,LP,LLP ) )
 
 # ----------------------------------------------------------------------------
+
+LPelems = 20                  # how many 1-second averages, sets lower freq limit
+LPbuf = [float(0)] * LPelems   # circular buffer of averages
+LPidx = 0                     # index into circular buffer
+
 data, addr = sock.recvfrom(1024)    # wait to receive data
 e1 = data.translate(None, '{}').split(",") # remove brackets, separate elemen                                                                               ts
 channel = e1[0]                  # first elem is channel, eg. 'SHZ'
 tstamp = time.strftime("%a, %d %b %Y %H:%M:%S UTC", time.gmtime(float(e1[1])) )
-print("HP50, LP2p5")
-print("# Full=0.5-25 Hz, LP=0.5-2.5 Hz " + channel)
+print("HP50, LP2p5, LLP05")
+print("# HP50=2.5-25 Hz, LP=0.5-2.5 Hz, LLP05=0.05-0.5 Hz " + channel)
 print("# Epoch: " + e1[1] + " " + tstamp)
 tstamp2 = time.strftime("%a, %d %b %Y %H:%M:%S ", time.localtime(float(e1[1])) )
 tzone = time.tzname[time.localtime().tm_isdst]
