@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 # Print out data stream from 50 Hz single-channel Raspberry Shake
+# J.Beale 07-April-2018
 # See also: https://manual.raspberryshake.org/udp.html#udp
 # https://groups.google.com/forum/#!topic/raspberryshake/vZOybDRDpHw
 
@@ -18,20 +19,7 @@ def plist( list ):
     print elem
 
 # from http://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
-def stdev( dat ):
-  "Calculate standard deviation of elements"
-  n = int(0)
-  mean= float(0)
-  m2 = float(0)
-  for elem in dat:
-    x = float(elem)
-    n += 1
-    delta = x - mean
-    mean += delta/n
-    m2 += (delta * (x - mean))
-  sdev = math.sqrt( m2/(n-1) )
-  return sdev
-
+# standard deviation is square-root of variance
 def variance( dat ):
   "Calculate variance of elements"
   n = int(0)
@@ -45,12 +33,6 @@ def variance( dat ):
     m2 += (delta * (x - mean))
   var = ( m2/(n-1) )
   return (var,mean)
-
-def pspair( elems ):
-  "Print out std.dev of 1st & 2nd half of list"
-  n=len(elems)/2
-  print("%.1f" % stdev(elems[:n]))
-  print("%.1f" % stdev(elems[n:]))
 
 def avg10( elems ):
   "Return new list 1/10 size, each elem avg of 10 elements input"
@@ -69,13 +51,17 @@ def avg10( elems ):
   return ret
 
 def ps( elems ):
-  "Print out RMS energy in HighPass and LowPass bands"
+  "Print out RMS energy in 3 frequency bands"
   global LPbuf    # circular buffer of 1-second averages
   global LPidx
   global LPelems
+  n = len(elems)
+  if (n != 100):  # all input should always have 100 elements
+    print("# ERROR: n= %d" % n)
+
   (LPsq,mean) = variance(avg10(elems))  # low-pass 0.5-2.5 Hz
-  (APsq,mean2) =  variance(elems)
-  HP = math.sqrt(abs(APsq - LPsq))   # high-pass 2.5-50 Hz
+  (APsq,mean2) =  variance(elems)       # all-pass 0.5-25 Hz
+  HP = math.sqrt(abs(APsq - LPsq))   # high-pass 2.5-25 Hz
   LP = math.sqrt(LPsq)
   LPbuf[LPidx] = mean
   LPidx += 1           # crank handle on circular buffer
@@ -85,32 +71,46 @@ def ps( elems ):
   LLP = math.sqrt( LLPvar ) # low-low-pass: 0.05 - 0.5 Hz
   print("%.1f, %.1f, %.2f" % (HP,LP,LLP ) )
 
+# --------------------------------------------------------------------
+def force50( L ):        # crop or extend L so it contains exactly 50 elements
+    Lmiss = 50 - len(L)
+    if (Lmiss > 0):      # if less than 50 elements, extend last element through 50
+      for i in range(0, Lmiss):
+        L.append(L[-1])    # add on copy of last element
+    if (Lmiss < 0):      # if more than 50 elements, crop off any beyond 50
+      L = L[0:50]        # crop off excess elements 
+    return L
+
+# --------------------------------------------------------------------
+def get50( sock ):                      # get exactly 50 elements of data from R-Shake
+    data, addr = sock.recvfrom(1024)    # wait to receive data from R-Shake
+    LL = data.translate(None, '{}').split(",") # remove brackets, separate elements
+    L = force50( LL[2:] )               # force list to have exactly 50 elements
+    return L
+
 # ----------------------------------------------------------------------------
 
 LPelems = 20                  # how many 1-second averages, sets lower freq limit
-LPbuf = [float(0)] * LPelems   # circular buffer of averages
 LPidx = 0                     # index into circular buffer
 
 data, addr = sock.recvfrom(1024)    # wait to receive data
-e1 = data.translate(None, '{}').split(",") # remove brackets, separate elemen                                                                               ts
-channel = e1[0]                  # first elem is channel, eg. 'SHZ'
-tstamp = time.strftime("%a, %d %b %Y %H:%M:%S UTC", time.gmtime(float(e1[1])) )
+AL = data.translate(None, '{}').split(",") # remove brackets, separate elemen                                                                               ts
+channel = AL[0]                  # first elem is channel, eg. 'SHZ'
+tstamp = time.strftime("%a, %d %b %Y %H:%M:%S UTC", time.gmtime(float(AL[1])) )
 print("HP50, LP2p5, LLP05")
 print("# HP50=2.5-25 Hz, LP=0.5-2.5 Hz, LLP05=0.05-0.5 Hz " + channel)
-print("# Epoch: " + e1[1] + " " + tstamp)
-tstamp2 = time.strftime("%a, %d %b %Y %H:%M:%S ", time.localtime(float(e1[1])) )
+print("# Epoch: " + AL[1] + " " + tstamp)
+tstamp2 = time.strftime("%a, %d %b %Y %H:%M:%S ", time.localtime(float(AL[1])) )
 tzone = time.tzname[time.localtime().tm_isdst]
 print("# Local: " + tstamp2 + tzone)
+A = force50(AL[2:])          # make sure we have exactly 50 data samples
+(waste,mean) =  variance(A)  # find average of 1st 50 samples
+LPbuf = [mean] * LPelems     # initialize circular buffer of averages
 
-# print(sum10(e1[2:]))
-
-while 1:                                # loop forever, ping-pong buffer (e1,e2)
-    data, addr = sock.recvfrom(1024)    # wait to receive data from R-Shake
-    e2 = data.translate(None, '{}').split(",") # remove brackets, separate elements
-    # print( sum10(e1[2:] + e2[2:]) )
-    ps(e1[2:] + e2[2:])  # print sdt.dev of 2 seconds of data (previous 1 and current)
-    data, addr = sock.recvfrom(1024)    # wait to receive data
-    e1 = data.translate(None, '{}').split(",") # remove brackets, separate elements
-    ps(e2[2:] + e1[2:])
+while 1:                            # loop forever, ping-pong buffer (A, B)
+    B = get50(sock)      # get next 50 data elements (blocks until received)
+    ps(A + B)  # print sdt.dev of 2 seconds of data (previous 1 and current)
+    A = get50(sock)
+    ps(B + A)
 
 # ===============================================================
