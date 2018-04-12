@@ -1,11 +1,13 @@
 /* ADS1256, datasheet: http://www.ti.com/lit/ds/sbas288j/sbas288j.pdf
-compare: https://github.com/Flydroid/ADS12xx-Library/blob/master/ads12xx.cpp
-    connections to Atmega328 (UNO)
+See also: https://github.com/Flydroid/ADS12xx-Library/blob/master/ads12xx.cpp
+better style: https://github.com/baettigp/ADS12xx-Library/blob/master/ads12xx.cpp
+
+connections to Atmega328 (UNO)
 
     CLK  - pin 13
     DIN  - pin 11 (MOSI)
     DOUT - pin 12 (MISO)
-    CS   - pin 10
+    CS   - pin 10 (or tie LOW)
     DRDY - pin 9
     RESET- pin 8 (or tie HIGH?)
     DVDD - 3V3
@@ -35,20 +37,6 @@ compare: https://github.com/Flydroid/ADS12xx-Library/blob/master/ads12xx.cpp
 #define U8 unsigned char
 int nAvg = 10;
 int i; // general use
-
-/* ADS1256 simple library for Arduino
-   ADS1256, datasheet: http://www.ti.com/lit/ds/sbas288j/sbas288j.pdf
-   connections to Atmega328 (UNO)
-
-    CLK  - pin 13
-    DIN  - pin 11 (MOSI)
-    DOUT - pin 12 (MISO)
-    CS   - pin 10
-    DRDY - pin 9
-    RESET- pin 8 (or tie HIGH?)
-    DVDD - 3V3
-    DGND - GND
-*/
 
 #define VREF (2.495)   // measured voltage of ADC Vref signal
 
@@ -265,12 +253,10 @@ void setup()
 {
   SPI.begin(); //start the spi-bus
   Serial.begin(115200);
-
-  // now set working parameters
   delay(500);
-  Serial.println("sec,V");
+  Serial.println("sec,V"); // CSV header
   
-  initADS();  // library function to setup ADC
+  initADS();  // setup ADC registers
 }
 
 void loop()
