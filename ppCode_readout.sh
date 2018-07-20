@@ -13,15 +13,14 @@ OUT="http://"$IP"/"$IDNUM"&Stats"  # http string to retrieve temp & humid. readi
 # output format:   YYYY-MM-DD HH:MM:SS , TEMP(F) , RH(%)
 
 while [ true ]; do
-  
+  sleep $((60 - $(date +%S) ))  # wait until top of next minute
+  td=$(date "+%F %T ,")  # current date and time
+
   IN=$( wget $OUT -qO- )
   IFS=':' read -ra AR <<< "$IN"
-  td=$(date +%F)" "$(date +%T)" ,"
-
+  
   echo -n $td >> $LOG
   s=${AR[1]} ;  echo -n " ${s%%F*} , " >> $LOG
   s=${AR[2]} ;  echo "${s%%\%*}" >> $LOG
   
-  sleep $((60 - $(date +%S) ))  # wait until top of next minute
-
 done
