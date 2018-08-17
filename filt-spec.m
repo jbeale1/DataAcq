@@ -15,7 +15,7 @@ y = y1(5E5:1E6);      % select just a portion of the full data
 % y = y1;
 
 x = abs(hilbert(y));             % get high-freq amplitude envelope
-envh = accumarray(ceil((1:numel(x))/dsfac)',x(:),[],@mean);  % downsample 100 to 1
+envh = accumarray(ceil((1:numel(x))/dsfac)',x(:),[],@mean);  % downsample by factor of 'dsfac'
 
 blo = fir1(ne,fcut,chebwin(ne+1)); % construct a FIR filter kernel
 tmp = filter(blo,1,envh);
