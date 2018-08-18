@@ -13,10 +13,11 @@ XSIZE=1000   # width of spectrogram (pixels)
 YSIZE=300    # height of spectrogram (pixels)
 
 for f in $INDIR/*.mp3 ; do
+  [ -e "$f" ] || continue    # quit if there weren't any files
   f1=`basename "$f"`         # get just filename, without the path
   FN="${f1%.*}"              # get base filename, without .mp3 extension
-  # mfile=$INDIR/$FN.mp3       # full filename of MP3 file to use
-  # echo $INDIR/$FN.mp3 $OUTDIR/$FN.png
+  # echo $f $OUTDIR/$FN.png
+
   sox $f -r $SR -t wav - | sox -t wav - -n spectrogram -y $YSIZE -x $XSIZE \
     -z $ZRANGE -Z $ZSTART -m -o $OUTDIR/$FN.png
   mv $f  $AUDTODIR/$f1  # move file after processing
