@@ -12,7 +12,6 @@ ffmpeg -nostdin -loglevel quiet -f alsa -ac 1 -ar 8000 -i plughw:1 -map 0:0 -aco
    ChA_%Y-%m-%d_%H-%M-%S.mp3
 
 # ============== alternate version ===========================
-
 #!/bin/bash
 
 # location to store audio files
@@ -28,7 +27,9 @@ cnum="1"
 # set mic input level to ~ 0 dB (which is strangely 15 out of 100)
 amixer -c "$cnum" cset numid=3 15
 
-# Record 5-minute-long MP3 files from audio device
-ffmpeg -f alsa -ac 2 -ar 48000 -i plughw:"$cnum" -map 0:0 -acodec libmp3lame \
+# Record fixed-length MP3 files from audio device continually
+ffmpeg -nostdin -loglevel quiet -f alsa -ac 2 -ar 44100 -i plughw:"$cnum" -map 0:0 -acodec libmp3lame \
   -b:a 256k -f segment -strftime 1 -segment_time "$duration" -segment_atclocktime 1 \
-   "$todir"ChA_%Y-%m-%d_%H-%M-%S.mp3
+   "$todir"ChA_%Y-%m-%d_%H-%M-%S.mp3 &
+
+sudo renice -n -19 $!
