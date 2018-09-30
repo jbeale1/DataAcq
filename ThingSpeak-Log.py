@@ -8,6 +8,7 @@
 
 import serial, datetime
 from urllib.request import urlopen
+from urllib.error import HTTPError
 
 logfile='/home/myshake/serlog/temp-log.csv'
 FLIM = 10  # flush buffer after this many lines
@@ -18,6 +19,9 @@ F2='&field2='
 F3='&field3='
 F4='&field4='
 DRATIO = 24 # decimation ratio, how many lines input per line output
+
+# example ThingSpeak data update URL
+# https://api.thingspeak.com/update?api_key=32X3XFHQAY803X7X&field1=22&field2=65&field3=25.1&field4=48.5
 
 f = open(logfile, 'w')
 
@@ -53,8 +57,11 @@ with serial.Serial('/dev/ttyUSB0', 9600, timeout=10) as ser:
           tups = TURL + APIKEY + F1 + sval[1].strip() + F2 + sval[0].strip() 
           tups = tups + F3 + sval[3].strip() + F4 + sval[2].strip() + "\n"
           # print(tups)  # URL to update ThingSpeak site
-          resp = urlopen(tups)  # send data to ThingSpeak site via URL GET
-          ts_reply = resp.read()  # reply from TS server
+          try:
+            resp = urlopen(tups)  # send data to ThingSpeak site via URL GET
+            ts_reply = resp.read()  # reply from TS server
+          except ( HTTPError):
+            print("HTTP Error , " + oline)
 
           f.write(oline)
           fctr += 1
