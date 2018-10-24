@@ -12,16 +12,13 @@ from urllib.error import HTTPError
 
 logfile='/home/myshake/serlog/temp-log.csv'
 FLIM = 10  # flush buffer after this many lines
-APIKEY='MySecretKeyString'
+APIKEY='TestingBadKey'
 TURL='https://api.thingspeak.com/update?api_key='
 F1='&field1='
 F2='&field2='
 F3='&field3='
 F4='&field4='
 DRATIO = 24 # decimation ratio, how many lines input per line output
-
-# example ThingSpeak data update URL
-# https://api.thingspeak.com/update?api_key=32X3XFHQAY803X7X&field1=22&field2=65&field3=25.1&field4=48.5
 
 f = open(logfile, 'w')
 
@@ -58,9 +55,10 @@ with serial.Serial('/dev/ttyUSB0', 9600, timeout=10) as ser:
           tups = tups + F3 + sval[3].strip() + F4 + sval[2].strip() + "\n"
           # print(tups)  # URL to update ThingSpeak site
           try:
-            resp = urlopen(tups)  # send data to ThingSpeak site via URL GET
-            ts_reply = resp.read()  # reply from TS server
-          except ( HTTPError):
+            resp = urlopen(tups)  # send data to ThingSpeak site via URL GET           
+            # ts_reply = resp.read()  # reply from TS server
+            # print(resp + " , " + ts_reply)  # DEBUG: 
+          except:  # one is "HTTPError", also "BadStatusLine" error?
             print("HTTP Error , " + oline)
 
           f.write(oline)
