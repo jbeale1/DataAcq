@@ -11,6 +11,9 @@ USAGE: track-DH5.py [<video_source>]
 # Python 2.7.13 and OpenCV 3.4.0
 # mods by J.Beale
 
+# for summary/montage thumbnail image:
+# montage th_DH5*.png -tile 8x -geometry "1x1<+2+2" summary.png
+ 
 from __future__ import print_function
 
 import numpy as np
