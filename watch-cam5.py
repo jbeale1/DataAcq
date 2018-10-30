@@ -19,6 +19,7 @@ import imutils  # http://www.pyimagesearch.com/2015/02/02/
 import time
 from datetime import datetime
 import os       # to flush buffer to disk
+import math     # math.floor()
 
 # ==============================================================
 
@@ -30,11 +31,11 @@ PORT = "554"
 URL2 = "/cam/realmonitor?channel=1&subtype=2"  # Dahua IP Cameras
 
 # parameters tuned assuming stream at 15 fps
-FDRATE=10          # frame decimation rate: only display 1 in this many frames
+FDRATE=1          # frame decimation rate: only display 1 in this many frames
 XFWIDE = 176       # width of resized frame
-vThreshold = 500   # how many non-zero velocity pixels for event
+vThreshold = 1100   # how many non-zero velocity pixels for event
 saveCount = 0      # how many images saved so far
-vThresh= 30        # minimum "significant" velocity
+vThresh= 15        # minimum "significant" velocity (was 30)
 runLimit=5         # how many frames of no motion ends a run
 validRunLength= 7  # how many frames of motion for good event
 show_hsv = False
@@ -42,7 +43,8 @@ show_vt = True    # display velocity threshold map
 logFname = 'Log_' + CNAME + '.txt'
 fPrefix= CNAME + '_'
 tPrefix= 'thumbs/th_' + CNAME
-thumbWidth= 120   # how many pixels wide saved thumbnail should be
+thumbWidth= 120   # max pixels wide for thumb
+thumbAspect = 1.333;  # maximum aspect ratio for thumbnail
 moT = 1.1         # Calc. dx/dt motion threshold for saving event
 vidname= UTYPE + UPASS + "@" + IPADD + ":" + PORT + URL2
 # for Dahua: "/cam/realmonitor?channel=1&subtype=2"
@@ -60,7 +62,7 @@ def draw_flow(img, flow, step=10):
         cv.circle(vis, (x1, y1), 1, (0, 255, 0), -1)
     return vis
 
-
+ 
 def calc_v(flow):
     h, w = flow.shape[:2]
     fx, fy = flow[:,:,0], flow[:,:,1]
@@ -71,8 +73,8 @@ def calc_v(flow):
     retval, grf = cv.threshold(gray, vThresh, 255, 0)
     gr = grf.astype(np.uint8)
     gr = cv.dilate(gr, None, iterations=2)
-    gr = cv.erode(gr, None, iterations=8)
-    gr = cv.dilate(gr, None, iterations=5)
+    gr = cv.erode(gr, None, iterations=4)  # was 8
+    gr = cv.dilate(gr, None, iterations=7) # was 5
     return gr
 
 def draw_hsv(flow):
@@ -100,8 +102,8 @@ if __name__ == '__main__':
 
     logf = open(logFname, 'a')
     tnow = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    print("DH5 Start: %s" % (tnow))
-    s = "DH5 Start: %s\n" % (tnow)
+    print("%s Start: %s" % (CNAME,tnow))
+    s = "%s Start: %s\n" % (CNAME,tnow)
     logf.write(s)
 
     # cam = video.create_capture(fn)
@@ -110,15 +112,15 @@ if __name__ == '__main__':
     bestImg = prevRaw
     tBest = time.localtime()
 
-    w = int(cam.get(3))  # image width
-    h = int(cam.get(4))  # image height
-    fs = (1.0 * w) / XFWIDE
+    w = int(cam.get(3))  # input image width
+    h = int(cam.get(4))  # input image height
+    fs = (1.0 * w) / XFWIDE # frame scaling factor
     print ("Image w,h = %d %d  Scale=%f" % (w, h, fs))
 
 
     motionNow = False  # if we have current motion
     mRun = 0           # how many motion frames in a row
-    frameCount = 1
+    frameCount = 1     # total number of frames read
     lastFC = 0         # previous motion frame count
     prevgray = cv.cvtColor(prev, cv.COLOR_BGR2GRAY)
     cur_glitch = prev.copy()
@@ -237,18 +239,30 @@ if __name__ == '__main__':
                   logf.flush()  # after event, actually write the buffered output to disk
                   os.fsync(logf.fileno())      
                   dt = time.strftime("%y%m%d_%H%M%S", tBest)
-                  fname3 = fPrefix + dt + ".jpg"
-                  fname4 = tPrefix + dt + ".jpg"
-                  # fs * brx
+                  fname3 = fPrefix + dt + ".jpg"  # full-size image
+                  fname4 = tPrefix + dt + ".png"  # thumbnail image
+                  # fname4 = tPrefix + dt + ".jpg"
+
                   x1=int(br[0]*fs)
                   y1=int(br[1]*fs)
                   x2=int((br[0]+br[2])*fs)
                   y2=int((br[1]+br[3])*fs)
+                  # imutils.resize will not constrain both width and height
+                  # so if input is too tall, need to reduce target width
+                  dYin = (y2-y1)
+                  dXin = (x2-x1)
+                  Aspect = (dXin / dYin)
+                  if (Aspect > thumbAspect):
+                    thumbWidthEff = thumbWidth
+                  else:
+                    thumbWidthEff = math.floor(0.5 + (thumbWidth * (Aspect / thumbAspect)))
+
+                  print("%d,%d A=%5.3f width:%d" % (dXin, dYin, Aspect, thumbWidthEff))
                   thumbImg= imutils.resize(bestImg[y1:y2,x1:x2], 
-                     width=thumbWidth)
+                     width=thumbWidthEff)
                   cv.imwrite(fname4, thumbImg ) # active region
-                  #cv.rectangle(bestImg,(x1,y1),(x2,y2),(0,255,0),1)
-                  cv.imwrite(fname3, bestImg) # save best image w/outline
+                  #cv.rectangle(bestImg,(x1,y1),(x2,y2),(0,255,0),1)  # draw rectangle on img
+                  cv.imwrite(fname3, bestImg) # save best image
 
             motionNow = False
             mRun = 0  # count of consecutive motion frames
