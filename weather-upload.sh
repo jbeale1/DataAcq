@@ -2,15 +2,14 @@
 
 # get latest still image, crop, rescale, and
 # upload JPEG to Wunderground webcam page
-# Can be run every 5 min from crontab with:
-#  */5 * * * * /dev/shm/weather-upload.sh
+# Can be run every 2 min from crontab with:
+#  */2 * * * * /dev/shm/weather-upload.sh
 
 # Below two commands should go in /etc/rc.local for startup
 #    copy weather-camera upload script to ramdisk
-# cp /home/pi/wcam-upload.sh /dev/shm/wcam-upload.sh
+# cp /home/pi/wcam-upload.sh /dev/shm/weather-upload.sh
 #    start up PiKrellCam to run the camera
 # su pi -c '(sleep 5; /usr/local/bin/pikrellcam) &'
-
 
 
 # Original PKC image size with this cam is 3280x2464 
@@ -41,7 +40,7 @@ for file in "$DIR"/*.jpg; do
 done
 
 # copy latest image to working directory
-cp $file $INFILE
+cp $file $WDIR/$INFILE
 
 # crop off right-hand edge, rescale to 25% size, and force size to be within 150 kB
 convert $WDIR/$INFILE -crop "$XS"x"$YS"+0+0 -resize 25% -define jpeg:extent=150000 $WDIR/$OUTFILE
@@ -51,6 +50,7 @@ ftp -n -v $HOST << EOT
 user $USER $PASSWD
 prompt
 binary
+lcd $WDIR
 put $OUTFILE 
 bye
 EOT
