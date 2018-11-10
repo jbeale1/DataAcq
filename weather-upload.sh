@@ -5,6 +5,12 @@
 # Can be run every 5 min from crontab with:
 #  */5 * * * * /dev/shm/weather-upload.sh
 
+# Below two commands should go in /etc/rc.local for startup
+#    copy weather-camera upload script to ramdisk
+# cp /home/pi/wcam-upload.sh /dev/shm/wcam-upload.sh
+#    start up PiKrellCam to run the camera
+# su pi -c '(sleep 5; /usr/local/bin/pikrellcam) &'
+
 # Original PKC image size with this cam is 3280x2464 
 XS="3150"  # cropped X size before rescale
 YS="2464"  # cropped Y size before rescale
