@@ -2,7 +2,9 @@
 // Uses Bill Greiman's DigitalIO library https://github.com/greiman/DigitalIO
 // sensor RF data format: http://www.f6fbb.org/domo/sensors/tx3_th.php
 
+// Data signal is pair of 44-bit packets every ~57 seconds, 30 msec between the pair
 // Uses 5V 433Mhz Superregeneration ASK Receiver ($8 on Amazon for Tx / Rx pair)
+// Current draw of receiver is 6 mA from +5V
 // Note: cannot use USB +5V power directly, due to high RF noise
 
 #include "DigitalIO.h"
