@@ -1,8 +1,6 @@
 // Analog input test for Teensy 3.0    Oct 4 2012 - Feb 26 2014 J.Beale
 // mods for testing Teensy 4 Beta 1  14-Feb-2019 J.Beale
 
-// Setup: https://picasaweb.google.com/109928236040342205185/Electronics#5795546092126071650
-
 #define VREF (3.292)         // ADC reference voltage (= power supply)
 #define VINPUT (1.328)       // ADC input voltage from NiCd AA battery
 //#define VINPUT (0.2991)       // ADC input voltage from resistive divider to VREF
