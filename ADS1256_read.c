@@ -719,7 +719,7 @@ void Write_DAC8552(uint8_t channel, uint16_t Data)
 *********************************************************************************************************
 */
 
-#define COUNTSPERVOLT 1695652   // approximate, in Gain=1 mode
+#define COUNTSPERVOLT 1695929   // approximate, in Gain=1 mode
 
 int main (int argc, char *argv[])
 {
@@ -735,6 +735,7 @@ int main (int argc, char *argv[])
    uint32_t readcount;
    uint8_t samplerate;
    uint8_t printout;  // 1 if we should display all readings
+   uint8_t repeat;    // 1 for continuous groups of "readcount" readings
 
    struct timeval start, end, total;  // find elapsed time to usec
 
@@ -749,10 +750,11 @@ int main (int argc, char *argv[])
   readcount = 100;  // default: number of samples to read
   samplerate = 7;   // default: 100 Hz sample rate
   printout = 0;     // default: don't print individual readings
+  repeat = 0;       // default: only do one set of 'readcount' readings
 
   if (argc < 2) {
-    printf("Usage : %s [CHn:0-7] [count:1..] [rate:0-15] [print flag:0,1]\n",argv[0]);
-    printf("Example: sudo %s 2 100 7 0    Read AD2, 100 samples at rate 7 (100 Hz), don't show samples\n\n",argv[0]);
+    printf("Usage : %s [CHn:0-7] [count:1..] [rate:0-15] [print flag:0,1] [repeat flag:0,1]\n",argv[0]);
+    printf("Example: sudo %s 2 100 7 0 0   Read AD2, 100 samples at rate 7 (100 Hz), no print, no repeat\n\n",argv[0]);
   }
   if (argc > 1)  // which channel to read
     readchannel = MIN(atoi(argv[1]),7);
@@ -760,9 +762,12 @@ int main (int argc, char *argv[])
     readcount = atoi(argv[2]);
   if (argc > 3)  // how many samples
     samplerate = MIN(atoi(argv[3]), ADS1256_DRAE_COUNT);
-  if (argc > 4)  // if we should print
+  if (argc > 4)  // printout flag 1=show all values
     if (atoi(argv[4]) > 0) 
       printout = 1;
+  if (argc > 5)  // repeat flag 1=run groups forever
+    if (atoi(argv[5]) > 0) 
+      repeat = 1;
 
   // printf("Read AD%d for %d samples at rate %d, print flag %d.\n", 
   //    readchannel, readcount, samplerate, printout);
@@ -802,15 +807,21 @@ int main (int argc, char *argv[])
    ADS1256_CfgADC(ADS1256_GAIN_1, (ADS1256_DRATE_E) samplerate);
    ADS1256_CfgADC(ADS1256_GAIN_1, (ADS1256_DRATE_E) samplerate);
 
-    ADS1256_SetChannel(readchannel);	// select ADC channel (0..7)
-    bsp_DelayUS(5);
-    ADS1256_WriteCmd(CMD_SYNC);  // SYNC needed after changing input MUX
-    bsp_DelayUS(5);
-    ADS1256_WriteCmd(CMD_WAKEUP); // restart ADC after SYNC operation
-    bsp_DelayUS(25);
+   ADS1256_SetChannel(readchannel);	// select ADC channel (0..7)
+   bsp_DelayUS(5);
+   ADS1256_WriteCmd(CMD_SYNC);  // SYNC needed after changing input MUX
+   bsp_DelayUS(5);
+   ADS1256_WriteCmd(CMD_WAKEUP); // restart ADC after SYNC operation
+   bsp_DelayUS(25);
 
-    ADS1256_WriteCmd(CMD_RDATAC); // start continuous reading mode
-    bsp_DelayUS(5);
+   ADS1256_WriteCmd(CMD_RDATAC); // start continuous reading mode
+   bsp_DelayUS(5);
+
+   // print column headers for CSV type output
+   if (printout != 0) printf("ADC_counts\n");  
+   if (repeat != 0) printf("date_time, samples, raw, stdev, pk-pk, volts\n");
+
+   do {  // run more than once if repeat != 0
 
     // --- variables for computing ADC reading statistics ---
     int32_t sMax = -(1<<24); // set initial extrema
@@ -825,7 +836,6 @@ int main (int argc, char *argv[])
     m2 = 0;    // intermediate var for std.dev
     datSum = 0; // running sum of readings
 
-    if (printout != 0) printf("ADC_counts\n");  // column header for CSV output
 
     // --- date / time of acquisition start ---
     time( &rawtime );
@@ -835,7 +845,7 @@ int main (int argc, char *argv[])
 
     gettimeofday(&start, NULL);  // start time in microseconds
 
-    while(n < readcount)
+    while(n < readcount)  // ===== MAIN READING LOOP ===========
     {
         ADS1256_WaitDRDY();  // wait for ADC result to be ready
         int32_t raw = ADS1256_ReadDataCont(); // get new ADC result
@@ -851,7 +861,8 @@ int main (int argc, char *argv[])
         delta = x - mean;
         mean += delta/n;
         m2 += (delta * (x - mean));
-    }
+    }  // ============= END MAIN READING LOOP ==============
+
     gettimeofday(&end, NULL);  // at this point we're all done
 
     variance = m2/((double)n-1);  // (n-1):Sample Variance  (n): Population Variance
@@ -869,15 +880,23 @@ int main (int argc, char *argv[])
 
     double duration = total.tv_sec + total.tv_usec/1E6;  // elapsed time in seconds
     double sps = (double)n / duration;  // achieved rate in samples per second
-    printf("# Avg: %5.3f  Std.Dev: %5.3f  Pk-Pk: %d  Volts: %8.7f\n", 
+    if (repeat == 0) {
+      printf("# Avg: %5.3f  Std.Dev: %5.3f  Pk-Pk: %d  Volts: %8.7f\n", 
         datAvg, stdev, (sMax-sMin), volts);
-    printf("# Start: %s   End: %s\n", start_date, end_date );
-    printf("# Samples: %d  Time: %5.3f sec  Rate: %5.3f Hz\n",n, duration, sps);
+      printf("# Start: %s   End: %s\n", start_date, end_date );
+      printf("# Samples: %d  Time: %5.3f sec  Rate: %5.3f Hz\n\n",n, duration, sps);
+    } else {
+      // time, samples, raw, stdev, pk, volts
+      printf("%s, %d, %5.3f, %5.3f, %d, %8.7f\n", 
+        start_date, n, datAvg, stdev, (sMax-sMin), volts);
+    }
 
-    // ADS1256_WriteCmd(CMD_SDATAC); // end continuous reading mode
+   } while (repeat != 0);
 
-    bcm2835_spi_end();
-    bcm2835_close();
+   // ADS1256_WriteCmd(CMD_SDATAC); // end continuous reading mode
 
-    return 0;
+   bcm2835_spi_end();
+   bcm2835_close();
+
+   return 0;
 }
