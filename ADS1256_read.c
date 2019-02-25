@@ -80,8 +80,8 @@ RPI_V2_GPIO_P1_13->RPI_GPIO_P1_13
 
 /* Unsigned integer types  */
 #define uint8_t unsigned char
-#define uint16_t unsigned short    
-#define uint32_t unsigned long     
+#define uint16_t unsigned short
+#define uint32_t unsigned long
 
 typedef enum {FALSE = 0, TRUE = !FALSE} bool;
 
@@ -486,7 +486,7 @@ static void ADS1256_SetChannel(uint8_t _ch)
 		0101 = AIN5 (ADS1256 only)
 		0110 = AIN6 (ADS1256 only)
 		0111 = AIN7 (ADS1256 only)
-		1xxx = AINCOM (when PSEL3 = 1, PSEL2, PSEL1, PSEL0 are ¡°don¡¯t care¡±)
+		1xxx = AINCOM (when PSEL3 = 1, PSEL2, PSEL1, PSEL0 are dont care)
 
 		NOTE: When using an ADS1255 make sure to only select the available inputs.
 
@@ -499,7 +499,7 @@ static void ADS1256_SetChannel(uint8_t _ch)
 		0101 = AIN5 (ADS1256 only)
 		0110 = AIN6 (ADS1256 only)
 		0111 = AIN7 (ADS1256 only)
-		1xxx = AINCOM (when NSEL3 = 1, NSEL2, NSEL1, NSEL0 are ¡°don¡¯t care¡±)
+		1xxx = AINCOM (when NSEL3 = 1, NSEL2, NSEL1, NSEL0 are dont care)
 	*/
 	if (_ch > 7)
 	{
@@ -528,7 +528,7 @@ static void ADS1256_SetDiffChannel(uint8_t _ch)
 		0101 = AIN5 (ADS1256 only)
 		0110 = AIN6 (ADS1256 only)
 		0111 = AIN7 (ADS1256 only)
-		1xxx = AINCOM (when PSEL3 = 1, PSEL2, PSEL1, PSEL0 are ¡°don¡¯t care¡±)
+		1xxx = AINCOM (when PSEL3 = 1, PSEL2, PSEL1, PSEL0 are dont care)
 
 		NOTE: When using an ADS1255 make sure to only select the available inputs.
 
@@ -541,23 +541,23 @@ static void ADS1256_SetDiffChannel(uint8_t _ch)
 		0101 = AIN5 (ADS1256 only)
 		0110 = AIN6 (ADS1256 only)
 		0111 = AIN7 (ADS1256 only)
-		1xxx = AINCOM (when NSEL3 = 1, NSEL2, NSEL1, NSEL0 are ¡°don¡¯t care¡±)
+		1xxx = AINCOM (when NSEL3 = 1, NSEL2, NSEL1, NSEL0 are dont care)
 	*/
 	if (_ch == 0)
 	{
-		ADS1256_WriteReg(REG_MUX, (0 << 4) | 1);	/* DiffChannel  AIN0£¬ AIN1 */
+		ADS1256_WriteReg(REG_MUX, (0 << 4) | 1);	/* DiffChannel  AIN0 AIN1 */
 	}
 	else if (_ch == 1)
 	{
-		ADS1256_WriteReg(REG_MUX, (2 << 4) | 3);	/*DiffChannel   AIN2£¬ AIN3 */
+		ADS1256_WriteReg(REG_MUX, (2 << 4) | 3);	/*DiffChannel   AIN2 AIN3 */
 	}
 	else if (_ch == 2)
 	{
-		ADS1256_WriteReg(REG_MUX, (4 << 4) | 5);	/*DiffChannel    AIN4£¬ AIN5 */
+		ADS1256_WriteReg(REG_MUX, (4 << 4) | 5);	/*DiffChannel    AIN4 AIN5 */
 	}
 	else if (_ch == 3)
 	{
-		ADS1256_WriteReg(REG_MUX, (6 << 4) | 7);	/*DiffChannel   AIN6£¬ AIN7 */
+		ADS1256_WriteReg(REG_MUX, (6 << 4) | 7);	/*DiffChannel   AIN6 AIN7 */
 	}
 }
 
@@ -576,7 +576,7 @@ static void ADS1256_WaitDRDY(void)
 {
 	uint32_t i;
 
-        bsp_DelayUS(5); // DANGER: EMPIRICAL DELAY. less may catch DRDY before it returns high
+        bsp_DelayUS(5); // DANGER: EMPIRICAL DELAY. less may catch DRDY before it returns high(?)
 
 	for (i = 0; i < TIMEOUT; i++)
 	{
@@ -709,22 +709,6 @@ void Write_DAC8552(uint8_t channel, uint16_t Data)
       bcm2835_spi_transfer((Data&0xff));  
       CS_1() ;
 }
-/*
-*********************************************************************************************************
-*	name: Voltage_Convert
-*	function:  Voltage value conversion function
-*	parameter: Vref : The reference voltage 3.3V or 5V
-*			   voltage : output DAC value 
-*	The return value:  NULL
-*********************************************************************************************************
-*/
-uint16_t Voltage_Convert(float Vref, float voltage)
-{
-	uint16_t _D_;
-	_D_ = (uint16_t)(65536 * voltage / Vref);
-    
-	return _D_;
-}
 
 /*
 *********************************************************************************************************
@@ -735,6 +719,7 @@ uint16_t Voltage_Convert(float Vref, float voltage)
 *********************************************************************************************************
 */
 
+#define COUNTSPERVOLT 1695652   // approximate, in Gain=1 mode
 
 int main (int argc, char *argv[])
 {
@@ -871,7 +856,8 @@ int main (int argc, char *argv[])
 
     variance = m2/((double)n-1);  // (n-1):Sample Variance  (n): Population Variance
     stdev = sqrt(variance);  // Calculate standard deviation
-    float datAvg = (1.0*datSum)/n;
+    double datAvg = (1.0*datSum)/n;         // average reading in raw ADC counts
+    double volts = datAvg / COUNTSPERVOLT;  // average reading in Volts (uncalibrated)
 
     timersub(&end, &start, &total);
 
@@ -883,7 +869,8 @@ int main (int argc, char *argv[])
 
     double duration = total.tv_sec + total.tv_usec/1E6;  // elapsed time in seconds
     double sps = (double)n / duration;  // achieved rate in samples per second
-    printf("# Avg: %5.3f  Std.Dev: %5.3f  Pk-Pk: %d\n", datAvg, stdev, (sMax-sMin));
+    printf("# Avg: %5.3f  Std.Dev: %5.3f  Pk-Pk: %d  Volts: %8.7f\n", 
+        datAvg, stdev, (sMax-sMin), volts);
     printf("# Start: %s   End: %s\n", start_date, end_date );
     printf("# Samples: %d  Time: %5.3f sec  Rate: %5.3f Hz\n",n, duration, sps);
 
