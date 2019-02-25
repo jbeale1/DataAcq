@@ -57,7 +57,7 @@ RPI_V2_GPIO_P1_13->RPI_GPIO_P1_13
 #include <math.h>
 #include <errno.h>
 #include <sys/time.h>  // elapsed time to microseconds; measure sample rate
-
+#include <time.h>      // time of day: time(), localtime()
 
 //CS      -----   SPICS  
 //DIN     -----   MOSI
@@ -166,7 +166,7 @@ enum
 	REG_FSC2   = 10, // xxH
 };
 
-/* Command definition�� TTable 24. Command Definitions --- ADS1256 datasheet Page 34 */
+/* Command definition£º TTable 24. Command Definitions --- ADS1256 datasheet Page 34 */
 enum
 {
 	CMD_WAKEUP  = 0x00,	// Completes SYNC and Exits Standby Mode 0000  0000 (00h)
@@ -301,8 +301,8 @@ void ADS1256_CfgADC(ADS1256_GAIN_E _gain, ADS1256_DRATE_E _drate)
 
 			ACAL=1  enable  calibration
 		*/
-		//buf[0] = (0 << 3) | (1 << 2) | (1 << 1);//enable the internal buffer
-        buf[0] = (0 << 3) | (1 << 2) | (0 << 1);  // The internal buffer is prohibited
+	buf[0] = (0 << 3) | (1 << 2) | (1 << 1);// buffer ON, auto-cal ON
+        // buf[0] = (0 << 3) | (1 << 2) | (0 << 1);  // buffer OFF, auto-cal ON
 
         //ADS1256_WriteReg(REG_STATUS, (0 << 3) | (1 << 2) | (1 << 1));
 
@@ -486,7 +486,7 @@ static void ADS1256_SetChannel(uint8_t _ch)
 		0101 = AIN5 (ADS1256 only)
 		0110 = AIN6 (ADS1256 only)
 		0111 = AIN7 (ADS1256 only)
-		1xxx = AINCOM (when PSEL3 = 1, PSEL2, PSEL1, PSEL0 are ��don��t care��)
+		1xxx = AINCOM (when PSEL3 = 1, PSEL2, PSEL1, PSEL0 are ¡°don¡¯t care¡±)
 
 		NOTE: When using an ADS1255 make sure to only select the available inputs.
 
@@ -499,7 +499,7 @@ static void ADS1256_SetChannel(uint8_t _ch)
 		0101 = AIN5 (ADS1256 only)
 		0110 = AIN6 (ADS1256 only)
 		0111 = AIN7 (ADS1256 only)
-		1xxx = AINCOM (when NSEL3 = 1, NSEL2, NSEL1, NSEL0 are ��don��t care��)
+		1xxx = AINCOM (when NSEL3 = 1, NSEL2, NSEL1, NSEL0 are ¡°don¡¯t care¡±)
 	*/
 	if (_ch > 7)
 	{
@@ -528,7 +528,7 @@ static void ADS1256_SetDiffChannel(uint8_t _ch)
 		0101 = AIN5 (ADS1256 only)
 		0110 = AIN6 (ADS1256 only)
 		0111 = AIN7 (ADS1256 only)
-		1xxx = AINCOM (when PSEL3 = 1, PSEL2, PSEL1, PSEL0 are ��don��t care��)
+		1xxx = AINCOM (when PSEL3 = 1, PSEL2, PSEL1, PSEL0 are ¡°don¡¯t care¡±)
 
 		NOTE: When using an ADS1255 make sure to only select the available inputs.
 
@@ -541,23 +541,23 @@ static void ADS1256_SetDiffChannel(uint8_t _ch)
 		0101 = AIN5 (ADS1256 only)
 		0110 = AIN6 (ADS1256 only)
 		0111 = AIN7 (ADS1256 only)
-		1xxx = AINCOM (when NSEL3 = 1, NSEL2, NSEL1, NSEL0 are ��don��t care��)
+		1xxx = AINCOM (when NSEL3 = 1, NSEL2, NSEL1, NSEL0 are ¡°don¡¯t care¡±)
 	*/
 	if (_ch == 0)
 	{
-		ADS1256_WriteReg(REG_MUX, (0 << 4) | 1);	/* DiffChannel  AIN0�� AIN1 */
+		ADS1256_WriteReg(REG_MUX, (0 << 4) | 1);	/* DiffChannel  AIN0£¬ AIN1 */
 	}
 	else if (_ch == 1)
 	{
-		ADS1256_WriteReg(REG_MUX, (2 << 4) | 3);	/*DiffChannel   AIN2�� AIN3 */
+		ADS1256_WriteReg(REG_MUX, (2 << 4) | 3);	/*DiffChannel   AIN2£¬ AIN3 */
 	}
 	else if (_ch == 2)
 	{
-		ADS1256_WriteReg(REG_MUX, (4 << 4) | 5);	/*DiffChannel    AIN4�� AIN5 */
+		ADS1256_WriteReg(REG_MUX, (4 << 4) | 5);	/*DiffChannel    AIN4£¬ AIN5 */
 	}
 	else if (_ch == 3)
 	{
-		ADS1256_WriteReg(REG_MUX, (6 << 4) | 7);	/*DiffChannel   AIN6�� AIN7 */
+		ADS1256_WriteReg(REG_MUX, (6 << 4) | 7);	/*DiffChannel   AIN6£¬ AIN7 */
 	}
 }
 
@@ -751,7 +751,14 @@ int main (int argc, char *argv[])
    uint8_t samplerate;
    uint8_t printout;  // 1 if we should display all readings
 
-   struct timeval start, end, total;  // find elapsed time
+   struct timeval start, end, total;  // find elapsed time to usec
+
+   // ----- for time of day start/end ------
+   time_t rawtime;
+   struct tm *info;
+   char start_date[80];
+   char end_date[80];
+
 
   readchannel = 2;  // default: ADC input channel (0..7)
   readcount = 100;  // default: number of samples to read
@@ -772,19 +779,14 @@ int main (int argc, char *argv[])
     if (atoi(argv[4]) > 0) 
       printout = 1;
 
-  printf("Read AD%d for %d samples at rate %d, print flag %d.\n", 
-      readchannel, readcount, samplerate, printout);
+  // printf("Read AD%d for %d samples at rate %d, print flag %d.\n", 
+  //    readchannel, readcount, samplerate, printout);
 
 // ======================================================
 
   if (!bcm2835_init())  // initialize BCM2835 library
         return 1;
 
-// BCM2835_SPI_MODE0  CPOL = 0, CPHA = 0
-// BCM2835_SPI_MODE1  CPOL = 0, CPHA = 1
-// BCM2835_SPI_MODE2  CPOL = 1, CPHA = 0
-// BCM2835_SPI_MODE3  CPOL = 1, CPHA = 1
-  
    bcm2835_spi_begin();  // configure SPI mode
    bcm2835_spi_setBitOrder(BCM2835_SPI_BIT_ORDER_MSBFIRST);
    bcm2835_spi_setDataMode(BCM2835_SPI_MODE1);
@@ -811,10 +813,7 @@ int main (int argc, char *argv[])
    }
 
   
-   // ADS1256_CfgADC(ADS1256_GAIN_1, ADS1256_2d5SPS);
-   // ADS1256_CfgADC(ADS1256_GAIN_1, ADS1256_100SPS);
-
-   // mysterious need to call twice if sample rate changed from last run?
+   // note possibly long auto-cal runs if sample rate changed from last run
    ADS1256_CfgADC(ADS1256_GAIN_1, (ADS1256_DRATE_E) samplerate);
    ADS1256_CfgADC(ADS1256_GAIN_1, (ADS1256_DRATE_E) samplerate);
 
@@ -841,7 +840,15 @@ int main (int argc, char *argv[])
     m2 = 0;    // intermediate var for std.dev
     datSum = 0; // running sum of readings
 
-    gettimeofday(&start, NULL);  // when we started, to calculate rate
+    if (printout != 0) printf("ADC_counts\n");  // column header for CSV output
+
+    // --- date / time of acquisition start ---
+    time( &rawtime );
+    info = localtime( &rawtime );
+    strftime(start_date,80,"%Y-%m-%d %H:%M:%S", info);
+    // --------------------------------------
+
+    gettimeofday(&start, NULL);  // start time in microseconds
 
     while(n < readcount)
     {
@@ -867,10 +874,18 @@ int main (int argc, char *argv[])
     float datAvg = (1.0*datSum)/n;
 
     timersub(&end, &start, &total);
+
+    // --- date / time of end of run ---
+    time( &rawtime );
+    info = localtime( &rawtime );
+    strftime(end_date,80,"%Y-%m-%d %H:%M:%S", info);
+    // --------------------------------------
+
     double duration = total.tv_sec + total.tv_usec/1E6;  // elapsed time in seconds
     double sps = (double)n / duration;  // achieved rate in samples per second
-    printf("\nAvg: %5.3f  Std.Dev: %5.3f  Pk-Pk: %d\n", datAvg, stdev, (sMax-sMin));
-    printf("Elapsed: %5.3f sec, Sample Rate: %5.3f Hz\n",duration, sps);
+    printf("# Avg: %5.3f  Std.Dev: %5.3f  Pk-Pk: %d\n", datAvg, stdev, (sMax-sMin));
+    printf("# Start: %s   End: %s\n", start_date, end_date );
+    printf("# Samples: %d  Time: %5.3f sec  Rate: %5.3f Hz\n",n, duration, sps);
 
     // ADS1256_WriteCmd(CMD_SDATAC); // end continuous reading mode
 
