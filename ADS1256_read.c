@@ -26,30 +26,7 @@
  *
  */
  
-/*
-             define from bcm2835.h                       define from Board DVK511
-                 3.3V | | 5V               ->                 3.3V | | 5V
-    RPI_V2_GPIO_P1_03 | | 5V               ->                  SDA | | 5V
-    RPI_V2_GPIO_P1_05 | | GND              ->                  SCL | | GND
-       RPI_GPIO_P1_07 | | RPI_GPIO_P1_08   ->                  IO7 | | TX
-                  GND | | RPI_GPIO_P1_10   ->                  GND | | RX
-       RPI_GPIO_P1_11 | | RPI_GPIO_P1_12   ->                  IO0 | | IO1
-    RPI_V2_GPIO_P1_13 | | GND              ->                  IO2 | | GND
-       RPI_GPIO_P1_15 | | RPI_GPIO_P1_16   ->                  IO3 | | IO4
-                  VCC | | RPI_GPIO_P1_18   ->                  VCC | | IO5
-       RPI_GPIO_P1_19 | | GND              ->                 MOSI | | GND
-       RPI_GPIO_P1_21 | | RPI_GPIO_P1_22   ->                 MISO | | IO6
-       RPI_GPIO_P1_23 | | RPI_GPIO_P1_24   ->                  SCK | | CE0
-                  GND | | RPI_GPIO_P1_26   ->                  GND | | CE1
-
-::if your raspberry Pi is version 1 or rev 1 or rev A
-RPI_V2_GPIO_P1_03->RPI_GPIO_P1_03
-RPI_V2_GPIO_P1_05->RPI_GPIO_P1_05
-RPI_V2_GPIO_P1_13->RPI_GPIO_P1_13
-::
-*/
-
-#include <bcm2835.h>  
+#include <bcm2835.h>
 #include <stdlib.h>    // atoi()
 #include <stdio.h>
 #include <unistd.h>
@@ -58,13 +35,6 @@ RPI_V2_GPIO_P1_13->RPI_GPIO_P1_13
 #include <errno.h>
 #include <sys/time.h>  // elapsed time to microseconds; measure sample rate
 #include <time.h>      // time of day: time(), localtime()
-
-//CS      -----   SPICS  
-//DIN     -----   MOSI
-//DOUT  -----   MISO
-//SCLK   -----   SCLK
-//DRDY  -----   ctl_IO     data  starting
-//RST     -----   ctl_IO     reset
 
 #define  DRDY  17  // ADC Data Ready:  RPi GPIO P1.11
 #define  RST   18  // ADC Reset:       RPi GPIO P1.12
@@ -216,12 +186,14 @@ static void ADS1256_WriteReg(uint8_t _RegID, uint8_t _RegValue);
 static uint8_t ADS1256_ReadReg(uint8_t _RegID);
 static void ADS1256_WriteCmd(uint8_t _cmd);
 uint8_t ADS1256_ReadChipID(void);
-static void ADS1256_SetChannel(uint8_t _ch);
-static void ADS1256_SetDiffChannel(uint8_t _ch);
 static void ADS1256_WaitDRDY(void);
-static int32_t ADS1256_ReadData(void);
+static void ADS1256_SetChannel(uint8_t _ch);
 static int32_t ADS1256_ReadDataCont(void);
-void ADS1256_Reset(void);                        // reset the chip
+// static void ADS1256_SetDiffChannel(uint8_t _ch);
+// static int32_t ADS1256_ReadData(void);
+
+void ADS1256_Reset(void);                          // reset the chip
+void time2string(char* start_date, struct timeval start); // convert time struct to readable string
 
 int32_t ADS1256_GetAdc(uint8_t _ch);
 
@@ -516,9 +488,8 @@ static void ADS1256_SetChannel(uint8_t _ch)
 *	The return value:  four high status register
 *********************************************************************************************************
 */
-static void ADS1256_SetDiffChannel(uint8_t _ch)
-{
-	/*
+
+/*
 	Bits 7-4 PSEL3, PSEL2, PSEL1, PSEL0: Positive Input Channel (AINP) Select
 		0000 = AIN0 (default)
 		0001 = AIN1
@@ -528,7 +499,7 @@ static void ADS1256_SetDiffChannel(uint8_t _ch)
 		0101 = AIN5 (ADS1256 only)
 		0110 = AIN6 (ADS1256 only)
 		0111 = AIN7 (ADS1256 only)
-		1xxx = AINCOM (when PSEL3 = 1, PSEL2, PSEL1, PSEL0 are dont care)
+		1xxx = AINCOM (when PSEL3 = 1, PSEL2, PSEL1, PSEL0 are don't care)
 
 		NOTE: When using an ADS1255 make sure to only select the available inputs.
 
@@ -541,25 +512,30 @@ static void ADS1256_SetDiffChannel(uint8_t _ch)
 		0101 = AIN5 (ADS1256 only)
 		0110 = AIN6 (ADS1256 only)
 		0111 = AIN7 (ADS1256 only)
-		1xxx = AINCOM (when NSEL3 = 1, NSEL2, NSEL1, NSEL0 are dont care)
-	*/
+		1xxx = AINCOM (when NSEL3 = 1, NSEL2, NSEL1, NSEL0 are don't care)
+*/
+
+/*
+static void ADS1256_SetDiffChannel(uint8_t _ch)
+{
 	if (_ch == 0)
 	{
-		ADS1256_WriteReg(REG_MUX, (0 << 4) | 1);	/* DiffChannel  AIN0 AIN1 */
+		ADS1256_WriteReg(REG_MUX, (0 << 4) | 1);	// DiffChannel  AIN0 AIN1
 	}
 	else if (_ch == 1)
 	{
-		ADS1256_WriteReg(REG_MUX, (2 << 4) | 3);	/*DiffChannel   AIN2 AIN3 */
+		ADS1256_WriteReg(REG_MUX, (2 << 4) | 3);	// DiffChannel   AIN2 AIN3
 	}
 	else if (_ch == 2)
 	{
-		ADS1256_WriteReg(REG_MUX, (4 << 4) | 5);	/*DiffChannel    AIN4 AIN5 */
+		ADS1256_WriteReg(REG_MUX, (4 << 4) | 5);	// DiffChannel    AIN4 AIN5
 	}
 	else if (_ch == 3)
 	{
-		ADS1256_WriteReg(REG_MUX, (6 << 4) | 7);	/*DiffChannel   AIN6 AIN7 */
+		ADS1256_WriteReg(REG_MUX, (6 << 4) | 7);	// DiffChannel   AIN6 AIN7
 	}
 }
+*/
 
 /*
 *********************************************************************************************************
@@ -590,46 +566,6 @@ static void ADS1256_WaitDRDY(void)
 		printf("Error: ADS1256_WaitDRDY() timeout.\n");
 	}
 }
-
-/*
-*********************************************************************************************************
-*	Name: ADS1256_ReadData
-*	Function: make one ADC reading in single-shot mode. Does not change channel, gain, etc
-*	Input Parameter: NULL
-*	Return value: signed 32-bit integer (Min: -2^23, Max: +2^23-1)
-*********************************************************************************************************
-*/
-static int32_t ADS1256_ReadData(void)
-{
- uint32_t read = 0;
- static uint8_t buf[3];
-
-    CS_0();	/* SPI   CS = 0 */
-
-    // ADS1256_DelayDATA();	  // TESTING. Needed?
-    ADS1256_Send8Bit(CMD_RDATA);  // send the read ADC command (if not in continuous mode)
-    ADS1256_DelayDATA();	  // delay before reading back
-
-    // read the 3 byte ADC value
-    buf[0] = ADS1256_Recive8Bit();
-    buf[1] = ADS1256_Recive8Bit();
-    buf[2] = ADS1256_Recive8Bit();
-
-    // assemble 3 bytes into one 32 bit word
-    read = ((uint32_t)buf[0] << 16) & 0x00FF0000;
-    read |= ((uint32_t)buf[1] << 8);
-    read |= buf[2];
-
-    CS_1();	/* SPI CS = 1 */
-
-	/* Extend a signed number*/
-    if (read & 0x800000)
-    {
-	    read |= 0xFF000000;
-    }
-
-    return (int32_t)read;
-} // end ADS1256_ReadData()
 
 /*
 *********************************************************************************************************
@@ -689,26 +625,28 @@ int32_t ADS1256_GetAdc(uint8_t _ch)
 	return iTemp;
 }
 
-/*
-*********************************************************************************************************
-*	name: Write_DAC8552
-*	function:  DAC send data 
-*	parameter: channel : output channel number 
-*			   data : output DAC value 
-*	The return value:  NULL
-*********************************************************************************************************
-*/
-void Write_DAC8552(uint8_t channel, uint16_t Data)
-{
-	uint8_t i;
+// ********************************************
+// time2string()  convert time value to readable string
+// ********************************************
 
-	 CS_1() ;
-	 CS_0() ;
-      bcm2835_spi_transfer(channel);
-      bcm2835_spi_transfer((Data>>8));
-      bcm2835_spi_transfer((Data&0xff));  
-      CS_1() ;
-}
+void time2string(char* start_date, struct timeval start) 
+{
+  int millisec;        // milliseconds past date/time whole second
+  char buffer[26];     // temporary string buffer
+  struct tm* tm_info;  // local time data
+
+    millisec = lrint(start.tv_usec/1000.0); // Round to nearest millisec
+    if (millisec>=1000) { // Allow for rounding up to nearest second
+      millisec -=1000;
+      start.tv_sec++;
+    }
+
+    tm_info = localtime(&start.tv_sec);
+    strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+    sprintf(start_date,"%s.%03d", buffer, millisec);  // save date/time to msec in string
+
+}  // end time2string()
+
 
 /*
 *********************************************************************************************************
@@ -724,24 +662,22 @@ void Write_DAC8552(uint8_t channel, uint16_t Data)
 int main (int argc, char *argv[])
 {
    uint8_t id;
-   int32_t adc[8];
-   int32_t volt[8];
-   uint8_t i;
-   uint8_t ch_num;    // 8 to read all 8 channels
-   uint8_t ch_start;  // 0 to start reading at first channel
-   int32_t iTemp;
-   uint8_t buf[3];
+   // int32_t adc[8];
+   // int32_t volt[8];
+   //uint8_t i;
+   // uint8_t ch_num;    // 8 to read all 8 channels
+   // uint8_t ch_start;  // 0 to start reading at first channel
+   // int32_t iTemp;
+   // uint8_t buf[3];
    uint8_t readchannel;
    uint32_t readcount;
    uint8_t samplerate;
    uint8_t printout;  // 1 if we should display all readings
    uint8_t repeat;    // 1 for continuous groups of "readcount" readings
 
-   struct timeval start, end, total;  // find elapsed time to usec
-
    // ----- for time of day start/end ------
-   time_t rawtime;
-   struct tm *info;
+   struct timeval start, end, total;  // find elapsed time to usec
+   // time_t rawtime;
    char start_date[80];
    char end_date[80];
 
@@ -827,23 +763,16 @@ int main (int argc, char *argv[])
     int32_t sMax = -(1<<24); // set initial extrema
     int32_t sMin = 1<<24;    // maximum possible value from 24-bit ADC
     uint32_t n;              // count of how many readings so far
-    double x,datSum,mean,delta,sumsq,m2,variance,stdev;  // to calculate standard deviation
+    double x,datSum,mean,delta,m2,variance,stdev;  // to calculate standard deviation
     // ----------------------------------------------------------------
 
-    sumsq = 0; // initialize running squared sum of differences
     n = 0;     // total number of ADC readings so far
     mean = 0;  // start off with running mean at zero
     m2 = 0;    // intermediate var for std.dev
     datSum = 0; // running sum of readings
 
-
-    // --- date / time of acquisition start ---
-    time( &rawtime );
-    info = localtime( &rawtime );
-    strftime(start_date,80,"%Y-%m-%d %H:%M:%S", info);
-    // --------------------------------------
-
     gettimeofday(&start, NULL);  // start time in microseconds
+    time2string(start_date, start);  // convert time data to readable string
 
     while(n < readcount)  // ===== MAIN READING LOOP ===========
     {
@@ -864,36 +793,28 @@ int main (int argc, char *argv[])
     }  // ============= END MAIN READING LOOP ==============
 
     gettimeofday(&end, NULL);  // at this point we're all done
+    time2string(end_date, end);  // convert time data to readable string
 
     variance = m2/((double)n-1);  // (n-1):Sample Variance  (n): Population Variance
     stdev = sqrt(variance);  // Calculate standard deviation
     double datAvg = (1.0*datSum)/n;         // average reading in raw ADC counts
     double volts = datAvg / COUNTSPERVOLT;  // average reading in Volts (uncalibrated)
 
-    timersub(&end, &start, &total);
-
-    // --- date / time of end of run ---
-    time( &rawtime );
-    info = localtime( &rawtime );
-    strftime(end_date,80,"%Y-%m-%d %H:%M:%S", info);
-    // --------------------------------------
-
+    timersub(&end, &start, &total);  // calculate (end-start) time interval
     double duration = total.tv_sec + total.tv_usec/1E6;  // elapsed time in seconds
     double sps = (double)n / duration;  // achieved rate in samples per second
     if (repeat == 0) {
-      printf("# Avg: %5.3f  Std.Dev: %5.3f  Pk-Pk: %d  Volts: %8.7f\n", 
+      printf("# Avg: %5.3f  Std.Dev: %5.3f  Pk-Pk: %d  Volts: %8.7f\n",
         datAvg, stdev, (sMax-sMin), volts);
       printf("# Start: %s   End: %s\n", start_date, end_date );
-      printf("# Samples: %d  Time: %5.3f sec  Rate: %5.3f Hz\n\n",n, duration, sps);
+      printf("# Samples: %lu  Time: %5.3f sec  Rate: %5.3f Hz\n\n",n, duration, sps);
     } else {
       // time, samples, raw, stdev, pk, volts
-      printf("%s, %d, %5.3f, %5.3f, %d, %8.7f\n", 
+      printf("%s, %lu, %5.3f, %5.3f, %d, %8.7f\n",
         start_date, n, datAvg, stdev, (sMax-sMin), volts);
     }
 
    } while (repeat != 0);
-
-   // ADS1256_WriteCmd(CMD_SDATAC); // end continuous reading mode
 
    bcm2835_spi_end();
    bcm2835_close();
