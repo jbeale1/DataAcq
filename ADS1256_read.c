@@ -197,9 +197,15 @@ void time2string(char* start_date, struct timeval start); // convert time struct
 
 // =========================================================================
 
+// time delay functions from bcm2835 library
 void  bsp_DelayUS(uint64_t micros)
 {
   bcm2835_delayMicroseconds (micros);
+}
+
+void  bsp_DelayMS(uint32_t millis)
+{
+  bcm2835_delay	(millis);
 }
 
 /*
@@ -622,6 +628,25 @@ void time2string(char* datestring, struct timeval tv)
 
 }  // end time2string()
 
+#define new_max(x,y) ((x) >= (y)) ? (x) : (y)
+
+void waitNext10s(void)  // wait until the start of the next even 10 second mark
+{
+  struct timeval start;
+  // struct timeval  end;
+  uint32_t millis;
+  // char start_date[80], end_date[80];               // string holding start date/time
+
+  gettimeofday(&start, NULL);  // what time is it right now?
+  millis = 10000 - (1000*(start.tv_sec % 10) + (start.tv_usec / 1000));
+  bsp_DelayMS(millis);  // now on even 10 second boundary (usually within a few ms)
+
+  // time2string(start_date, start);  // convert time data to readable string
+  // gettimeofday(&end, NULL);  // start time in microseconds
+  // time2string(end_date, end);  // convert time data to readable string
+  // printf("start %s, waited %lu millis, now %s\n",start_date,millis,end_date);
+
+}
 
 /*
 *********************************************************************************************************
@@ -642,6 +667,7 @@ int main (int argc, char *argv[])
   uint8_t samplerate;
   uint8_t printout;  // 1 if we should display all readings
   uint8_t repeat;    // 1 for continuous groups of "readcount" readings
+  uint8_t tsync;     // 1 to synchronize sample start to UTC second
 
   struct timeval start, end, total;  // find elapsed time to usec
   char start_date[80];               // string holding start date/time
@@ -652,6 +678,7 @@ int main (int argc, char *argv[])
   samplerate = 7;   // default: 100 Hz sample rate
   printout = 0;     // default: don't print individual readings
   repeat = 0;       // default: only do one set of 'readcount' readings
+  tsync = 0;        // default: don't synchronize to even seconds in UTC time
 
   if (argc < 2) {
     printf("Usage : %s [CHn:0-7] [count:1..] [rate:0-15] [print flag:0,1] [repeat flag:0,1]\n",argv[0]);
@@ -669,6 +696,9 @@ int main (int argc, char *argv[])
   if (argc > 5)  // repeat flag 1=run groups forever
     if (atoi(argv[5]) > 0)
       repeat = 1;
+  if (argc > 6)  // sync flag 1= wait until next even 10 seconds
+    if (atoi(argv[6]) > 0)
+      tsync = 1;
 
 
   if (!bcm2835_init())  // initialize BCM2835 library
@@ -714,7 +744,7 @@ int main (int argc, char *argv[])
 
    // print column headers for CSV type output
    if (printout != 0) printf("ADC_counts\n");
-   if (repeat != 0) printf("start_time, samples, raw, stdev, pk-pk, volts\n");
+   if (repeat != 0) printf("end_time, samples, raw, stdev, pk-pk, volts\n");
 
    do {  // run more than once if repeat != 0
 
@@ -729,6 +759,9 @@ int main (int argc, char *argv[])
     mean = 0;  // start off with running mean at zero
     m2 = 0;    // intermediate var for std.dev
     datSum = 0; // running sum of readings
+
+    if (tsync != 0)
+      waitNext10s();  // wait until the start of the next even 10 second mark
 
     gettimeofday(&start, NULL);  // start time in microseconds
     time2string(start_date, start);  // convert time data to readable string
@@ -768,9 +801,9 @@ int main (int argc, char *argv[])
       printf("# Start: %s   End: %s\n", start_date, end_date );
       printf("# Samples: %lu  Time: %5.3f sec  Rate: %5.3f Hz\n\n",n, duration, sps);
     } else {
-      // start_time, samples, raw, stdev, pk, volts
+      // end_time, samples, raw, stdev, pk, volts
       printf("%s, %lu, %5.3f, %5.3f, %d, %8.7f\n",
-        start_date, n, datAvg, stdev, (sMax-sMin), volts);
+        end_date, n, datAvg, stdev, (sMax-sMin), volts);
     }
 
    } while (repeat != 0);
