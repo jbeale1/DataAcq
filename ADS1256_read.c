@@ -195,8 +195,6 @@ static int32_t ADS1256_ReadDataCont(void);
 void ADS1256_Reset(void);                          // reset the chip
 void time2string(char* start_date, struct timeval start); // convert time struct to readable string
 
-int32_t ADS1256_GetAdc(uint8_t _ch);
-
 // =========================================================================
 
 void  bsp_DelayUS(uint64_t micros)
@@ -602,48 +600,25 @@ static int32_t ADS1256_ReadDataCont(void)
     return (int32_t)read;
 } // end ADS1256_ReadDataCont()
 
-
-/*
-*********************************************************************************************************
-*	name: ADS1256_GetAdc
-*	function: read ADC value
-*	parameter:  channel number 0--7
-*	The return value:  ADC vaule (signed number)
-*********************************************************************************************************
-*/
-int32_t ADS1256_GetAdc(uint8_t _ch)
-{
-	int32_t iTemp;
-
-	if (_ch > 7)
-	{
-		return 0;
-	}
-
-	iTemp = g_tADS1256.AdcNow[_ch];
-
-	return iTemp;
-}
-
 // ********************************************
 // time2string()  convert time value to readable string
 // ********************************************
 
-void time2string(char* start_date, struct timeval start) 
+void time2string(char* datestring, struct timeval tv) 
 {
   int millisec;        // milliseconds past date/time whole second
   char buffer[26];     // temporary string buffer
   struct tm* tm_info;  // local time data
 
-    millisec = lrint(start.tv_usec/1000.0); // Round to nearest millisec
+    millisec = lrint(tv.tv_usec/1000.0); // Round to nearest millisec
     if (millisec>=1000) { // Allow for rounding up to nearest second
       millisec -=1000;
-      start.tv_sec++;
+      tv.tv_sec++;
     }
 
-    tm_info = localtime(&start.tv_sec);
+    tm_info = localtime(&tv.tv_sec);
     strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
-    sprintf(start_date,"%s.%03d", buffer, millisec);  // save date/time to msec in string
+    sprintf(datestring,"%s.%03d", buffer, millisec);  // save date/time to msec in string
 
 }  // end time2string()
 
@@ -661,26 +636,16 @@ void time2string(char* start_date, struct timeval start)
 
 int main (int argc, char *argv[])
 {
-   uint8_t id;
-   // int32_t adc[8];
-   // int32_t volt[8];
-   //uint8_t i;
-   // uint8_t ch_num;    // 8 to read all 8 channels
-   // uint8_t ch_start;  // 0 to start reading at first channel
-   // int32_t iTemp;
-   // uint8_t buf[3];
-   uint8_t readchannel;
-   uint32_t readcount;
-   uint8_t samplerate;
-   uint8_t printout;  // 1 if we should display all readings
-   uint8_t repeat;    // 1 for continuous groups of "readcount" readings
+  uint8_t id;
+  uint8_t readchannel;
+  uint32_t readcount;
+  uint8_t samplerate;
+  uint8_t printout;  // 1 if we should display all readings
+  uint8_t repeat;    // 1 for continuous groups of "readcount" readings
 
-   // ----- for time of day start/end ------
-   struct timeval start, end, total;  // find elapsed time to usec
-   // time_t rawtime;
-   char start_date[80];
-   char end_date[80];
-
+  struct timeval start, end, total;  // find elapsed time to usec
+  char start_date[80];               // string holding start date/time
+  char end_date[80];                 // string holding end date/time
 
   readchannel = 2;  // default: ADC input channel (0..7)
   readcount = 100;  // default: number of samples to read
@@ -699,16 +664,12 @@ int main (int argc, char *argv[])
   if (argc > 3)  // how many samples
     samplerate = MIN(atoi(argv[3]), ADS1256_DRAE_COUNT);
   if (argc > 4)  // printout flag 1=show all values
-    if (atoi(argv[4]) > 0) 
+    if (atoi(argv[4]) > 0)
       printout = 1;
   if (argc > 5)  // repeat flag 1=run groups forever
-    if (atoi(argv[5]) > 0) 
+    if (atoi(argv[5]) > 0)
       repeat = 1;
 
-  // printf("Read AD%d for %d samples at rate %d, print flag %d.\n", 
-  //    readchannel, readcount, samplerate, printout);
-
-// ======================================================
 
   if (!bcm2835_init())  // initialize BCM2835 library
         return 1;
@@ -729,7 +690,6 @@ int main (int argc, char *argv[])
    bcm2835_gpio_fsel(RST, BCM2835_GPIO_FSEL_OUTP);   // set RST line as output
    bcm2835_gpio_write(RST, HIGH);                    // reset is active low
 
-
    ADS1256_Reset();                        // reset the chip
    id = ADS1256_ReadChipID();
 
@@ -738,7 +698,6 @@ int main (int argc, char *argv[])
      return 1;
    }
 
-  
    // note possibly long auto-cal runs if sample rate changed from last run
    ADS1256_CfgADC(ADS1256_GAIN_1, (ADS1256_DRATE_E) samplerate);
    ADS1256_CfgADC(ADS1256_GAIN_1, (ADS1256_DRATE_E) samplerate);
@@ -754,8 +713,8 @@ int main (int argc, char *argv[])
    bsp_DelayUS(5);
 
    // print column headers for CSV type output
-   if (printout != 0) printf("ADC_counts\n");  
-   if (repeat != 0) printf("date_time, samples, raw, stdev, pk-pk, volts\n");
+   if (printout != 0) printf("ADC_counts\n");
+   if (repeat != 0) printf("start_time, samples, raw, stdev, pk-pk, volts\n");
 
    do {  // run more than once if repeat != 0
 
@@ -809,7 +768,7 @@ int main (int argc, char *argv[])
       printf("# Start: %s   End: %s\n", start_date, end_date );
       printf("# Samples: %lu  Time: %5.3f sec  Rate: %5.3f Hz\n\n",n, duration, sps);
     } else {
-      // time, samples, raw, stdev, pk, volts
+      // start_time, samples, raw, stdev, pk, volts
       printf("%s, %lu, %5.3f, %5.3f, %d, %8.7f\n",
         start_date, n, datAvg, stdev, (sMax-sMin), volts);
     }
@@ -820,4 +779,4 @@ int main (int argc, char *argv[])
    bcm2835_close();
 
    return 0;
-}
+} // end main()
