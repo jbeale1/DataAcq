@@ -1,6 +1,6 @@
 /*
  * Read serial data from Radio Shack multimeter 22-168A
- * also Micronta DMM 22-182 and 22-168
+ * also Micronta DMM 22-182 and 22-168, Metex M-3650D
  * Derived from http://www.linuxtoys.org/dvm/dvm.html
  * Example:  dmm /dev/tty02 > readings
  * Compile: gcc -o dmm dmm.c -lm
