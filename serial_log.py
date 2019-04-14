@@ -27,7 +27,7 @@ oldm = int(time.time()/60.0)  # time.time() = floating-point seconds since epoch
 with serial.Serial(device, 115200, timeout=10) as ser:
   while True:
     line = ser.readline()
-    # print(line)
+    print(line) # DEBUG for immediate feedback
     s0 = line.decode("utf-8").strip()  # bytes to string, without start/end whitespace
     s = s0.strip('\0')  # serial port open sometimes gives a null byte
     nc = len(s)  # how many useful characters in the input string?
