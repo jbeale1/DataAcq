@@ -15,8 +15,8 @@ def twos_complement(value, bitWidth):
         return value - int((value << 1) & 2**bitWidth)
 
 def getadreading(address,adcConfig):
- w = bus.read_i2c_block_data(address,adcConfig)
- w24 = ( (w[0]<<16)  | (w[1]<<8) | w[2] ) # 24-bit word
+ w = bus.read_i2c_block_data(address,adcConfig) # default is reading 4 bytes
+ w24 = ( (w[0]<<16)  | (w[1]<<8) | w[2] ) # 24-bit result word, w[3] is config register
  # print(format(w24, '08x'), end=' , ')  # DEBUG display hex value
  tc = twos_complement( w24, 24 )
  t = tc * (2.048 / 2**17)  # gain=1 fullscale = +/- 2.048 V
