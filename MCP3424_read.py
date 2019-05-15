@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-# Simple code to read MCP3424 18-bit ADC  5/5/2019 JPB
+# Simple code to read MCP3424 18-bit ADC  15-May-2019 JPB
 
 from smbus import SMBus
 from time import sleep
@@ -19,10 +19,18 @@ adc_address = 0x69  # MCP3424 I2C address selection
 #  1-shot, Ch1, 18 bits/3.75 sps, PGA Gain=x1   1000 1100 = 0x8c
 #  1-shot, Ch2, 18 bits/3.75 sps, PGA Gain=x1   1010 1100 = 0xac
 #  1-shot, Ch3, 18 bits/3.75 sps, PGA Gain=x1   1100 1100 = 0xcc
-#  1-shot, Ch4, 18 bits/3.75 sps, PGA Gain=x1   1110 1100 = 0xec
+#  1-shot, Ch4, 18 bits/3.75 sps, PGA Gain=x4   1110 1110 = 0xee
+#  1-shot, Ch4, 18 bits/3.75 sps, PGA Gain=x8   1110 1111 = 0xef
+
+tInt = 5.0                # sampling interval in seconds (1 set of 4 channels)
+tFudge = 0.027            # seconds of loop overhead
+tInterval = tInt-tFudge    # account for loop time overhead
 
 cnum = 4  # how many channels there are
-channels = [0x8c, 0xac, 0xcc, 0xec]  # list of channel config values
+channels = [0x8c, 0xac, 0xcc, 0xef]  # list of channel config values
+
+# calibration done 15-May-2019 to SCF2 10.000V standard from voltagereference.com
+scalefac = [10.020, 10.0361, 10.0251, 1.0403 * 100.0 / 8.0]  # scaling for each ADC channel
 raw = [0.0, 0.0, 0.0, 0.0]  # list of raw ADC values
 
 cfactor = 1.00136   # correction scaling factor (onboard Vref calibration)
@@ -54,7 +62,7 @@ junk = getadreading(adc_address, channels[0]) # I2C address, config register wit
 
 while ( True ):
   # sleep(1/3.75) # MCP3424: 3.75 samples per second at 18 bit resolution
-  sleep((2.00 - 0.024) - 3*tacq) # MCP3424: 3.75 samples per second at 18 bit resolution
+  sleep(tInterval - 3*tacq) # MCP3424: 3.75 samples per second at 18 bit resolution
 
   t = datetime.datetime.utcnow()
   sectime = t.time().second + t.time().microsecond/1000000.0
@@ -66,5 +74,5 @@ while ( True ):
     raw[c] = getadreading(adc_address, channels[next]) # I2C address, config register with channel #
 
   for i in range(0,cnum):
-    print( "{:+.{}f}".format( raw[i], 6 ),end=' , ' )
+    print( "{:+.{}f}".format( scalefac[i] * raw[i], 4 ),end=' , ' )
   print( "{0:.3f}".format(sectime) )  # second of the UTC minute [0...60)
