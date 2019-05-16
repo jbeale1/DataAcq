@@ -5,6 +5,15 @@
 from smbus import SMBus
 from time import sleep
 import datetime    # for time of day datestamp
+# ---------------------
+
+path = "/home/pi/FMES/"    # path to log file
+tInt = 2.0                 # sampling interval in seconds (1 set of 4 channels)
+
+fInterval = 100            # how many lines to write before flushing to filesystem
+eol = "\n"           # end of line string in file output
+sep = ","            # separator between data elements on one CSV line
+# ----------------------------
 
 bus = SMBus(1)      # I2C device is 18-bit ADC MCP3424
 adc_address = 0x69  # MCP3424 I2C address selection
@@ -22,8 +31,7 @@ adc_address = 0x69  # MCP3424 I2C address selection
 #  1-shot, Ch4, 18 bits/3.75 sps, PGA Gain=x4   1110 1110 = 0xee
 #  1-shot, Ch4, 18 bits/3.75 sps, PGA Gain=x8   1110 1111 = 0xef
 
-tInt = 5.0                # sampling interval in seconds (1 set of 4 channels)
-tFudge = 0.027            # seconds of loop overhead
+tFudge = 0.024             # seconds of loop overhead
 tInterval = tInt-tFudge    # account for loop time overhead
 
 cnum = 4  # how many channels there are
@@ -53,12 +61,20 @@ def getadreading(address,adcConfig):
 
 # ====================
 
+
 t = datetime.datetime.utcnow()
-print("# MCP3424 4-Ch ADC log v0.1")
-print("# Start: " + str(t) + " UTC")
+tsUTC = t.strftime("%y%m%d_%H%M%S")  # for example: 190516_183009
+fname = path + tsUTC + "_3MCP.csv"          # data log filename with start date/time
+f = open(fname, 'w')                 # open log file
+
+f.write("Vtilt, Vc1, Vc2, degC, sec" + eol)
+f.write("# FMES Seismometer AUX channels: MCP3424 4-Ch ADC log v0.2" + eol)
+f.write("# Start: " + str(t) + " UTC" + eol)
 
 # restart ADC conversion + read prev result which is junk because previous settings unknown
 junk = getadreading(adc_address, channels[0]) # I2C address, config register with channel #
+
+linecount = fInterval-5   # number of lines written to output file
 
 while ( True ):
   # sleep(1/3.75) # MCP3424: 3.75 samples per second at 18 bit resolution
@@ -74,5 +90,10 @@ while ( True ):
     raw[c] = getadreading(adc_address, channels[next]) # I2C address, config register with channel #
 
   for i in range(0,cnum):
-    print( "{:+.{}f}".format( scalefac[i] * raw[i], 4 ),end=' , ' )
-  print( "{0:.3f}".format(sectime) )  # second of the UTC minute [0...60)
+    f.write( "{:+.{}f}".format( scalefac[i] * raw[i], 4 ) + sep)  # each ADC channel reading
+  f.write( "{0:.3f}".format(sectime) + eol )  # ADC read started, second of the UTC minute [0...60)
+
+  linecount += 1
+  if (linecount > fInterval):
+    f.flush()
+    linecount = 0
