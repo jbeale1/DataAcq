@@ -1,19 +1,34 @@
+// Read 16-bit ADC ADS1115 channels for FMES data
+// also Teensy 3.2's own analog input pin for temperature (LM35)
+
 #include <Wire.h>
 #include <Adafruit_ADS1015.h>
 
 Adafruit_ADS1115 ads;   // TI 16-bit 4-ch ADC
 
 const int LED = 13;  // output LED indicator
+const int LM35 = A0;    // TI LM35 sensor output on this ADC pin
+
+unsigned int rawTemp;
+float mVperCount = (0.0503);   // mV per Teensy ADC count (LM35: 10 mV/C)
+float degCperCount = (0.00503);   // (LM35: 10 mV/C)
+float f = 0.05;                   // T(deg.C) low-pass filter fraction
+float smC;                       // smoothed temperature, C
 
 void setup(void)
 {
   pinMode(LED, OUTPUT);
   digitalWrite(LED, HIGH);  // signal to user we are starting
   
-  Serial.begin(115200);
+  Serial1.begin(115200);  // use physical serial port (restart issues with USB)
   delay(3000);
-  // Serial.println("  ADC1, range1, ADC2, range2");
-  Serial.println("# ADS1115 Diff 01 channel 2019-03-31 JPB");
+  // Serial1.println("  ADC1, range1, ADC2, range2");
+  analogReadRes(16);          // Teensy 3.0: set ADC resolution to this many bits
+  analogReadAveraging(16);    // average this many readings
+  rawTemp = analogRead(LM35);    
+  smC = rawTemp*degCperCount;  // starting point for low-pass filter smoothed value
+
+  Serial1.println("# ADS1115 Diff 01 channel 2019-03-31 JPB");
   digitalWrite(LED, LOW);
    
   // The ADC input range (or gain) can be changed via the following
@@ -44,6 +59,8 @@ void setup(void)
   ads.setGain(GAIN_ONE);
   // ads.startComparator_Differential(0, 1000);
   //  #define ADS1115_CONVERSIONDELAY         (8) // in milliseconds
+
+
 }
 
 void loop(void)
@@ -73,10 +90,15 @@ void loop(void)
   float avg1 = (float) sum1 / samples; 
   float avg2 = (float) sum2 / samples; 
   digitalWrite(LED, HIGH);  // signal to user
-  Serial.print(avg1,1);   Serial.print(",");
-  Serial.print(amax1 - amin1);   Serial.print(",");
-  Serial.print(avg2,1);   Serial.print(",");
-  Serial.print(amax2 - amin2);
-  Serial.println();
+  rawTemp = analogRead(LM35);    
+  float degC = rawTemp*degCperCount;
+  smC = (1.0-f)*smC + (f * degC);   // deg.C, low-pass filter smoothed 
+  
+  Serial1.print(avg1,1);   Serial1.print(",");
+  Serial1.print(amax1 - amin1);   Serial1.print(",");
+  Serial1.print(avg2,1);   Serial1.print(",");
+  Serial1.print(amax2 - amin2);   Serial1.print(",");
+  // Serial1.print(rawTemp*degCperCount);  Serial1.print(",");
+  Serial1.println(smC);
   digitalWrite(LED, LOW);
 }
