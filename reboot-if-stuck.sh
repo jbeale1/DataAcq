@@ -2,7 +2,7 @@
 
 # Confirm audio logging is still active and reboot if not
 
-todir="/dev/shm/audio"  # check if this directory exits
+todir="/dev/shm/audio"  # check if this directory exists
 ftype="*.mp3"           # check if it contains this type of file
 logfile="/home/pi/restart.log"
 
