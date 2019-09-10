@@ -11,19 +11,25 @@ dnStart = datenum(cStart); # day number from Year 0000
 dstr = datestr(dnStart);
 
 # fstart = [ 2019 09 07 14 13 (23.335) ]; # 190907-MagTest1 start
-fstart = [ 2019 09 07 17 49 35.359631 ]; # 190907-MagTest2 start
-fname = "/home/john/magfield/190907-MagTest2.csv";  # input data
+# fstart = [ 2019 09 07 17 49 35.359631 ]; # 190907-MagTest2 start
+fstart = [ 2019 09 08 13 25 22.412079 ]; # 190908-MagTest1 start
+#fname = "/home/john/magfield/190907-MagTest2.csv";  # input data
+fname = "/home/john/magfield/190908-MagTest1.csv";  # input data
+fout = "/home/john/magfield/190908-speeds.csv"; # output data
+
+fid = fopen (fout, "w");
 
 fDnum = datenum(fstart);  # file-start Day Number
 fDstr = datestr(fDnum);
-printf("Runtime: %s  File start: %s\n",dstr,fDstr);
+fprintf(fid,"enum, idx1,idx2, date, xcor, mph\n");
+fprintf(fid,"# Runtime: %s\n",dstr);
+fprintf(fid,"# Data filename: %s\n",fname);
+fprintf(fid,"# Data start: %s\n",fDstr);
 
 # ------------------------------------------------------------------
 sample_rate = 7.457716;  # LTC2400 ADC sample rate, Hz
-#sample_rate = 7.47372; # rate if an extra datestamp line every minute
 upsample_ratio = 10;   # upsample raw data to resolve xcorr peak
 xwindow = 40;          # window size: samples around each event
-# xstart=7000;           # ignore nose/data before this line
 xstart=3;           # ignore nose/data before this line
 rThresh = 0.002;        # threshold on xcorr peak value for valid event
 pkThresh = 0.005;       # initial raw peak threshold
@@ -32,8 +38,6 @@ sPolarity = -1;         # fudge factor of 1 or -1 if sensor order switched
 off1=30;          # low side window offset from filtered peak center
 off2=10;          # high side window offset from filtered peak center
 
-# from xstart, 2019-09-06 10:45:45 - 11:37 am PDT
-# duration:  51.455 minutes (23024 samples at 7.4577 Hz)
 # ------------------------------------------------------------------
 
 # read data record of both sensors
@@ -51,6 +55,7 @@ warning ("off");
     "MinPeakHeight",pkThresh,"MinPeakDistance",10,"MinPeakWidth",8);
 warning ("on");
 t=1:rows(raw);
+hours = t/(60*60*sample_rate);
 
 #for i = (1 : rows(idx2));
 #  c = idx2(i);
@@ -59,14 +64,9 @@ t=1:rows(raw);
 #endfor
 #break;
 
-#subplot(2,1,1)
-#plot(t,raw(:,1),t(idx),raw(idx,1),'or'); axis tight;
-#subplot(2,1,2)
-lfilt=log(abs(filt)+0.001);
-plot(t,lfilt,t(idx2),lfilt(idx2),'or'); axis tight;
-#rows(pks)   # how many peaks found
-#rows(pks2)
-#break;
+#plot(hours,lfilt,hours(idx2),lfilt(idx2),'or'); axis tight;
+#xlabel("hours"); ylabel("log strength");
+
 
 # ======================
 #s = tf('s');
@@ -77,7 +77,13 @@ eventIdx = 0;  # keep track of each event
 xs = xwindow; # x step size (= or smaller than window size)
 for i = (1 : rows(idx2) );
   c = idx2(i);
-  s1=raw(c-off1:c+off2,:);  # slice of full record with this event
+  cstart = c - off1;
+  cend = c + off2;
+  if (cstart < 1) || (cend > xsize)
+    # printf("i=%d start=%d end=%d, xsz=%d\n",i,cstart,cend,xsize);
+    break;
+  endif # too close to start or end
+  s1=raw(cstart:cend,:);  # slice of full record with this event
   s1r = resample(s1,upsample_ratio,1); # n:1 interpolation from both sensors
   [R, lag] = xcorr(s1r(:,1),s1r(:,2));  # cross-correlation between 2 sensors
   [rpk, ridx] = max(R);  # if rpk is too low => no real event
@@ -103,16 +109,53 @@ for i = (1 : rows(idx2) );
       # start_min = PkIdx2 / (sample_rate * 60);
       eventDnum = fDnum + start_min / (60*24);  # day number of this event
       eventDstr = datestr(eventDnum); # Y M D H:M:S format
-      printf("%02d, %s, %05.2f, %+05.2f\n",
-         eventIdx,eventDstr,rpk,speed_mph);
-      # printf("Xcor: %3.1f , %5.2f mph\n",rpk,speed_mph);
-      # break;
+      fprintf(fid,"%02d, %d,%d, %s, %05.2f, %+05.2f\n",
+         eventIdx,PkIdx1,PkIdx2,eventDstr,rpk,speed_mph);
+      evtspeed(eventIdx) = speed_mph;  # remember this event's speed
+      evtdate(eventIdx) = eventDnum;
     endif
-
   endif
-
 endfor
+
+fclose (fid);  # close output file
+
+# plot histogram
+evtStart = evtdate(1);
+evtDays = evtdate - evtStart;
+totalDays = evtDays(end:end);
+lfilt=log(abs(filt)+0.001);
+
+subplot(2,1,1) # event histogram (1 bar = 30 minutes)
+hist(evtDays,totalDays*48); axis tight; grid on;
+xlabel("days (1 bar = 30 minutes)"); ylabel("traffic");
+
+bins=6:1:50;
+subplot(2,1,2) # speed histogram (1 bar = 1 mph)
+hist(abs(evtspeed),bins); axis tight; grid on;
+xlabel("mph"); ylabel("vehicles");
+caption1 = sprintf("Duration = %4.2f days",totalDays);
+caption2 = sprintf("Traffic = %d vehicles",eventIdx);
+text(6, 80, caption1);
+text(6, 60, caption2);
+
 # -----------------------------------------------
+#{
+fname = "/home/john/magfield/190909-raw500_3.csv";
+raw = csvread(fname);
+r1 = reshape(raw',1,[]);
+# ps = periodogram(r1,[],8192,500);
+sf=500; sf2 = sf/2;
+[b1,a1]=pei_tseng_notch( [60/sf2, 120/sf2, 179.9/sf2, 200/sf2],
+  [4/sf2, 2/sf2, 2/sf2, 3/sf2]); # notch a few peaks
+f1 = filter(b1,a1,r1);
+std(f1)
+[b2,a2] = butter(4, 50/sf2); # just 4-pole rolloff above 50 Hz
+f2 = filter(b2,a2,f1);
+[psf wf] = periodogram(f2,[],8192,500);
+plot(wf,log(psf));
+std(f2)
+
+#}
 
 #{
 sensor1 time at drvway  R-val   MPH       desc
