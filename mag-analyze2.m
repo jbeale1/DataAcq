@@ -12,10 +12,12 @@ dstr = datestr(dnStart);
 
 # fstart = [ 2019 09 07 14 13 (23.335) ]; # 190907-MagTest1 start
 # fstart = [ 2019 09 07 17 49 35.359631 ]; # 190907-MagTest2 start
-fstart = [ 2019 09 08 13 25 22.412079 ]; # 190908-MagTest1 start
+#fstart = [ 2019 09 08 13 25 22.412079 ]; # 190908-MagTest1 start
+fstart = [ 2019 09 10 13 14 57.250011 ]; # 190910-MagTest1 start
 #fname = "/home/john/magfield/190907-MagTest2.csv";  # input data
-fname = "/home/john/magfield/190908-MagTest1.csv";  # input data
-fout = "/home/john/magfield/190908-speeds.csv"; # output data
+#fname = "/home/john/magfield/190908-MagTest1.csv";  # input data
+fname = "/home/john/magfield/190910-MagTest1.csv";  # input data
+fout = "/home/john/magfield/190910-speeds.csv"; # output data
 
 fid = fopen (fout, "w");
 
@@ -64,8 +66,9 @@ hours = t/(60*60*sample_rate);
 #endfor
 #break;
 
-#plot(hours,lfilt,hours(idx2),lfilt(idx2),'or'); axis tight;
-#xlabel("hours"); ylabel("log strength");
+subplot(3,1,1) # raw signal vs. time, event detection
+plot(hours,filt,hours(idx2),filt(idx2),'or'); axis tight;
+xlabel("hours"); ylabel("log strength");
 
 
 # ======================
@@ -119,24 +122,35 @@ endfor
 
 fclose (fid);  # close output file
 
+mSpeed = median(abs(evtspeed));  # median speed
+
 # plot histogram
 evtStart = evtdate(1);
 evtDays = evtdate - evtStart;
 totalDays = evtDays(end:end);
 lfilt=log(abs(filt)+0.001);
 
-subplot(2,1,1) # event histogram (1 bar = 30 minutes)
+subplot(3,1,2) # event histogram (1 bar = 30 minutes)
 hist(evtDays,totalDays*48); axis tight; grid on;
 xlabel("days (1 bar = 30 minutes)"); ylabel("traffic");
 
-bins=6:1:50;
-subplot(2,1,2) # speed histogram (1 bar = 1 mph)
-hist(abs(evtspeed),bins); axis tight; grid on;
+bins=6:2:50;
+subplot(3,1,3) # speed histogram (1 bar = 1 mph)
+[HistN, HistX] = hist(abs(evtspeed),bins);
+bar(HistX,HistN,1.0); axis tight; grid on;
+Ymax = max(HistN);  # max value of Y axis on plot
+Xpos = HistX(1);  # X coord to start in-plot captions
 xlabel("mph"); ylabel("vehicles");
+caption0 = sprintf("%s",fname);
+captionp5 = sprintf("Data start: %s\n",fDstr);
 caption1 = sprintf("Duration = %4.2f days",totalDays);
 caption2 = sprintf("Traffic = %d vehicles",eventIdx);
-text(6, 80, caption1);
-text(6, 60, caption2);
+caption3 = sprintf("Median = %5.2f mph",mSpeed);
+text(Xpos, Ymax*0.9, caption0);
+text(Xpos, Ymax*0.8, captionp5);
+text(Xpos, Ymax*0.7, caption1);
+text(Xpos, Ymax*0.6, caption2);
+text(Xpos, Ymax*0.5, caption3);
 
 # -----------------------------------------------
 #{
