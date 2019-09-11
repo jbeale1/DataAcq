@@ -13,13 +13,20 @@ dstr = datestr(dnStart);
 # fstart = [ 2019 09 07 14 13 (23.335) ]; # 190907-MagTest1 start
 # fstart = [ 2019 09 07 17 49 35.359631 ]; # 190907-MagTest2 start
 #fstart = [ 2019 09 08 13 25 22.412079 ]; # 190908-MagTest1 start
-fstart = [ 2019 09 10 13 14 57.250011 ]; # 190910-MagTest1 start
+#fstart = [ 2019 09 10 13 14 57.250011 ]; # 190910-MagTest1 start
+fstart = [ 2019 09 11 08 42 12.187210 ]; # 190911-MagTest1 start
+
+fdir = "/home/john/magfield/"
 #fname = "/home/john/magfield/190907-MagTest2.csv";  # input data
 #fname = "/home/john/magfield/190908-MagTest1.csv";  # input data
-fname = "/home/john/magfield/190910-MagTest1.csv";  # input data
-fout = "/home/john/magfield/190910-speeds.csv"; # output data
+#fin_name = "190910-MagTest1.csv";  # input data
+fin_name = "190911-MagTest1.csv";  # input data
 
-fid = fopen (fout, "w");
+fname = [fdir fin_name];
+fout = [fdir fin_name(1:end-4) "_speeds.csv"];
+printf("Writing to output file: %s\n",fout);
+
+fid = fopen (fout, "w"); # open output results file
 
 fDnum = datenum(fstart);  # file-start Day Number
 fDstr = datestr(fDnum);
@@ -44,7 +51,8 @@ off2=10;          # high side window offset from filtered peak center
 
 # read data record of both sensors
 raw = csvread(fname,[xstart,0,1e10,1]);
-[xsize cols] = size(raw);
+[xsize cols] = size(raw);  # total samples in record
+totalDays = xsize / (sample_rate * 60 * 60 * 24); # total duration in days
 # ---
 
 sum=raw(:,1) + raw(:,2);  # blindly add ch1 and ch2 together
@@ -106,33 +114,69 @@ for i = (1 : rows(idx2) );
     else
       speed_mph = 1E6;
     endif
-    if (abs(speed_mph) < 65) # don't be ridiculous
+    if (abs(speed_mph) < 65) && (abs(speed_mph) > 4) # don't be ridiculous
       eventIdx += 1;
       start_min = PkIdx1 / (sample_rate * 60);
-      # start_min = PkIdx2 / (sample_rate * 60);
       eventDnum = fDnum + start_min / (60*24);  # day number of this event
       eventDstr = datestr(eventDnum); # Y M D H:M:S format
-      fprintf(fid,"%02d, %d,%d, %s, %05.2f, %+05.2f\n",
-         eventIdx,PkIdx1,PkIdx2,eventDstr,rpk,speed_mph);
+      fprintf(fid,"%02d, %d,%d, %06.4f, %s, %05.2f, %+05.2f\n",
+         eventIdx,PkIdx1,PkIdx2,start_min/(60*24),eventDstr,rpk,speed_mph);
       evtspeed(eventIdx) = speed_mph;  # remember this event's speed
       evtdate(eventIdx) = eventDnum;
+      # return; # DEBUG
     endif
   endif
 endfor
 
 fclose (fid);  # close output file
+# -------------------------------------------------------
 
-mSpeed = median(abs(evtspeed));  # median speed
+mSpeed = median(abs(evtspeed));  # overall median speed
+moSpeed = mode(round(abs(evtspeed)));
 
 # plot histogram
-evtStart = evtdate(1);
-evtDays = evtdate - evtStart;
-totalDays = evtDays(end:end);
+evtStart = fDnum; # day number of first sample in file
+evtDays = evtdate - evtStart; # day number of each event from file start
 lfilt=log(abs(filt)+0.001);
 
+ehbins = floor(totalDays*48);
+binsize = totalDays/ehbins;
+xlpos = 0:binsize:totalDays;
+binctrs = xlpos(1:end-1) + binsize/2;
 subplot(3,1,2) # event histogram (1 bar = 30 minutes)
-hist(evtDays,totalDays*48); axis tight; grid on;
+# [ hN, hX ] = hist(evtDays,ehbins);
+[ hN, hX ] = hist(evtDays,binctrs);
+bar(hX,hN,1.0); axis tight; grid on;
 xlabel("days (1 bar = 30 minutes)"); ylabel("traffic");
+colormap(jet());
+bars = columns(xlpos)-1; # better be same as ehbins
+for i = (1:bars);
+  evtdRel = evtdate - fDnum; # day number relative to start time
+  idx = find( (evtdRel >= xlpos(i)) & (evtdRel < xlpos(i+1)) );
+  if (columns(idx) > 0)
+    sSlice = evtspeed(idx(1):idx(end));
+    ms = median(abs(sSlice));
+    as = mean(abs(sSlice));
+  else
+    sSlice = [];
+    ms = 0;
+    as = 0;
+  endif
+  medCap0 = sprintf("%02d",columns(sSlice)); # number of events in slice
+  medCap1 = sprintf("%02d",floor(ms)); # median
+  medCap2 = sprintf("%02d",floor(as)); # average or mean
+  # xcpos = (i-0.5) * (totalDays/(bars)) ; # center on bar
+  xcpos = hX(i);
+   # median of data slice for this bar
+  text(xcpos,25,medCap0,"horizontalalignment","center");
+  text(xcpos,15,medCap1,"horizontalalignment","center");
+  text(xcpos,5,medCap2,"horizontalalignment","center");
+  printf("%d: (%5.4f,%5.4f) events: %d median: %d mean:%d \n",
+    i,xlpos(i),xlpos(i+1),columns(sSlice),floor(ms),floor(as));
+  #if (i == 24)
+  #     return;
+  #endif
+endfor
 
 bins=6:2:50;
 subplot(3,1,3) # speed histogram (1 bar = 1 mph)
@@ -146,11 +190,13 @@ captionp5 = sprintf("Data start: %s\n",fDstr);
 caption1 = sprintf("Duration = %4.2f days",totalDays);
 caption2 = sprintf("Traffic = %d vehicles",eventIdx);
 caption3 = sprintf("Median = %5.2f mph",mSpeed);
-text(Xpos, Ymax*0.9, caption0);
-text(Xpos, Ymax*0.8, captionp5);
-text(Xpos, Ymax*0.7, caption1);
-text(Xpos, Ymax*0.6, caption2);
-text(Xpos, Ymax*0.5, caption3);
+caption4 = sprintf("Mode = %d mph",moSpeed);
+text(Xpos, Ymax*0.85, caption0);
+text(Xpos, Ymax*0.75, captionp5);
+text(Xpos, Ymax*0.65, caption1);
+text(Xpos, Ymax*0.55, caption2);
+text(Xpos, Ymax*0.45, caption3);
+text(Xpos, Ymax*0.35, caption4);
 
 # -----------------------------------------------
 #{
