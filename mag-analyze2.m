@@ -14,13 +14,15 @@ dstr = datestr(dnStart);
 # fstart = [ 2019 09 07 17 49 35.359631 ]; # 190907-MagTest2 start
 #fstart = [ 2019 09 08 13 25 22.412079 ]; # 190908-MagTest1 start
 #fstart = [ 2019 09 10 13 14 57.250011 ]; # 190910-MagTest1 start
-fstart = [ 2019 09 11 08 42 12.187210 ]; # 190911-MagTest1 start
+# fstart = [ 2019 09 11 08 42 12.187210 ]; # 190911-MagTest1 start
+#fstart = [ 2019 09 12 10 23 00.111578 ]; # 190912-MagTest1 start
+fstart = [ 2019 09 13 23 55 20.472794 ]; # 190913-MagTest1 start
 
 fdir = "/home/john/magfield/"
-#fname = "/home/john/magfield/190907-MagTest2.csv";  # input data
-#fname = "/home/john/magfield/190908-MagTest1.csv";  # input data
 #fin_name = "190910-MagTest1.csv";  # input data
-fin_name = "190911-MagTest1.csv";  # input data
+#fin_name = "190911-MagTest1.csv";  # input data
+#fin_name = "190912-MagTest1.csv";  # input data
+fin_name = "190913-MagTest1.csv";  # input data
 
 fname = [fdir fin_name];
 fout = [fdir fin_name(1:end-4) "_speeds.csv"];
@@ -53,6 +55,7 @@ off2=10;          # high side window offset from filtered peak center
 raw = csvread(fname,[xstart,0,1e10,1]);
 [xsize cols] = size(raw);  # total samples in record
 totalDays = xsize / (sample_rate * 60 * 60 * 24); # total duration in days
+fDEstr = datestr(fDnum+totalDays); # end time of file
 # ---
 
 sum=raw(:,1) + raw(:,2);  # blindly add ch1 and ch2 together
@@ -74,7 +77,7 @@ hours = t/(60*60*sample_rate);
 #endfor
 #break;
 
-subplot(3,1,1) # raw signal vs. time, event detection
+hAxis1 = subplot(3,1,1); # raw signal vs. time, event detection
 plot(hours,filt,hours(idx2),filt(idx2),'or'); axis tight;
 xlabel("hours"); ylabel("log strength");
 
@@ -143,12 +146,12 @@ ehbins = floor(totalDays*48);
 binsize = totalDays/ehbins;
 xlpos = 0:binsize:totalDays;
 binctrs = xlpos(1:end-1) + binsize/2;
-subplot(3,1,2) # event histogram (1 bar = 30 minutes)
+hAxis2 = subplot(3,1,2); # event histogram (1 bar = 30 minutes)
 # [ hN, hX ] = hist(evtDays,ehbins);
 [ hN, hX ] = hist(evtDays,binctrs);
 bar(hX,hN,1.0); axis tight; grid on;
 xlabel("days (1 bar = 30 minutes)"); ylabel("traffic");
-colormap(jet());
+colormap(cool(64));
 bars = columns(xlpos)-1; # better be same as ehbins
 for i = (1:bars);
   evtdRel = evtdate - fDnum; # day number relative to start time
@@ -179,88 +182,32 @@ for i = (1:bars);
 endfor
 
 bins=6:2:50;
-subplot(3,1,3) # speed histogram (1 bar = 1 mph)
+hAxis3 = subplot(3,1,3); # speed histogram (1 bar = 1 mph)
 [HistN, HistX] = hist(abs(evtspeed),bins);
 bar(HistX,HistN,1.0); axis tight; grid on;
 Ymax = max(HistN);  # max value of Y axis on plot
 Xpos = HistX(1);  # X coord to start in-plot captions
 xlabel("mph"); ylabel("vehicles");
 caption0 = sprintf("%s",fname);
-captionp5 = sprintf("Data start: %s\n",fDstr);
+captionp5 = sprintf("Data start: %s",fDstr);
+captionp6 = sprintf("Data end: %s",fDEstr);
 caption1 = sprintf("Duration = %4.2f days",totalDays);
 caption2 = sprintf("Traffic = %d vehicles",eventIdx);
 caption3 = sprintf("Median = %5.2f mph",mSpeed);
 caption4 = sprintf("Mode = %d mph",moSpeed);
 text(Xpos, Ymax*0.85, caption0);
 text(Xpos, Ymax*0.75, captionp5);
+text(Xpos, Ymax*0.70, captionp6);
 text(Xpos, Ymax*0.65, caption1);
 text(Xpos, Ymax*0.55, caption2);
 text(Xpos, Ymax*0.45, caption3);
 text(Xpos, Ymax*0.35, caption4);
 
+pos = get( hAxis1, 'Position' );
+pos(2)=0.68; pos(4)=0.22; set( hAxis1, 'Position', pos);
+pos2 = get( hAxis2, 'Position' );
+pos2(2)=0.38; pos2(4)=0.24; set( hAxis2, 'Position', pos2);
+pos3 = get( hAxis3, 'Position' );
+pos3(2)=0.07; pos3(4)=0.24; set( hAxis3, 'Position', pos3);
 # -----------------------------------------------
-#{
-fname = "/home/john/magfield/190909-raw500_3.csv";
-raw = csvread(fname);
-r1 = reshape(raw',1,[]);
-# ps = periodogram(r1,[],8192,500);
-sf=500; sf2 = sf/2;
-[b1,a1]=pei_tseng_notch( [60/sf2, 120/sf2, 179.9/sf2, 200/sf2],
-  [4/sf2, 2/sf2, 2/sf2, 3/sf2]); # notch a few peaks
-f1 = filter(b1,a1,r1);
-std(f1)
-[b2,a2] = butter(4, 50/sf2); # just 4-pole rolloff above 50 Hz
-f2 = filter(b2,a2,f1);
-[psf wf] = periodogram(f2,[],8192,500);
-plot(wf,log(psf));
-std(f2)
-
-#}
-
-#{
-sensor1 time at drvway  R-val   MPH       desc
-10:45:59 AM  10:46:00 AM  0.17  -27.26   L slv 4D
-10:46:05 AM  10:46:07 AM  10.89 +27.63   R gry crsovr
-10:47:04 AM  10:47:06 AM  4.5   +25.53   R slvr crsovr
-10:48:16 AM  10:48:18 AM  2.93  +30.56   R grn jeep
-10:48:37 AM  10:48:38 AM  0.01  -15.88   L wht truck/van
-10:49:09 AM  10:49:11 AM  3.87  +23.45   R blu SUV
-10:49:22 AM  10:49:24 AM  19.98 +29.66   R slvr 4D
-10:49:32 AM  10:49:34 AM  5.83  +30.10   R wht 4D
-10:50:06 AM  10:50:08 AM  0.68  +17.39   R red pickup
-10:50:18 AM  10:50:20 AM  5.99  +26.19   R grey SUV
-10:51:23 AM  10:51:25 AM  3.6   +24.3    R gry 4D
-10:52:26 AM  10:52:27 AM  0.36  -31.03   L slvr 4D
-10:53:19 AM  10:53:20 AM  0.11  -27.63   L gry 4D
-10:53:23 AM  10:53:24 AM  0.65  -28.81   L red SUV
-10:53:45 AM  10:43:46 AM  0.37  -34.77   L slvr 4D
-10:56:11 AM  10:56:13 AM  5.47  +26.54   R wht pickup
-10:56:40 AM  10:56:43 AM  10.8  +21.23   R blk SUV
-10:57:50 AM  10:57:52 AM  9.74  +16.95   R grey 4D
-10:58:59 AM  10:59:01 AM  2.8   +26.89   R turq jeep
-11:00:56 AM  11:00:57 AM  0.29  -33.06   L slvr SUV
-11:03:33 AM  11:03:34 AM  0.03  -13.27   L FedEx Trk
-11:03:39 AM  11:03:41 AM  0.07  -21.01   L blk crsovr
-11:05:04 AM  11:05:06 AM  0.17  -26.19   L wht 4D
-11:05:53 AM  11:05:55 AM  4.87  +30.56   R wht prius
-11:08:14 AM  11:08:15 AM  0.3   -28.81   L slvr 4D
-11:09:52 AM  11:09:53 AM  0.2   -28.81   L dkrd 4D
-11:12:08 AM  11:12:10 AM  0.13  -34.77   L red 4D
-11:14:03 AM  11:14:05 AM  0.68  +24.01   R white 4D
-11:14:53 AM  11:14:55 AM  0.76  +29.23   R drk crsover
-11:15:03 AM  11:15:05 AM  4.98  +26.19   R silver crsovr
-11:16:19 AM  11:16:21 AM  0.04  -33.62   L red crossover
-11:16:34 AM  11:16:36 AM  5.94  +22.16   R silver 4D
-11:17:55 AM  11:17:57 AM  4.73  +24.90   R silver crossover
-11:18:04 AM  11:18:05 AM  0.25  -31.03   L grey crossover
-11:18:27 AM  11:18:29 AM  0.32  +26.89   R grey prius
-11:21:26 AM  11:21:28 AM  3.22  +26.89   R black 4D
-11:22:01 AM  11:22:02 AM  0.87  -31.51   L silver 4D
-11:24:02 AM  11:24:03 AM  0.16  -31.51   L silver compact
-11:26:00 AM  11:26:01 AM  0.03  -21.69   L dark 4D
-11:27:09 AM  11:27:17 AM  6.38  +25.21   R silver 4D
-11:31:14 AM  11:31:15 AM  16.88 +22.66   R silver 4D
-11:32:08 AM  11:32:10 AM  1.27  +30.56   R black pickup
-11:35:01 AM  11:35:00 AM  5.02  -87.69   error:L truck + 2 R cars
-11:35:59 AM  11:36:02 AM  1.00  +28.81   R wht 4D
-#}
+printf("%s\n%s\n",captionp5,captionp6);  # show start,end time/date
