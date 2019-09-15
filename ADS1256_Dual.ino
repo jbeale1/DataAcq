@@ -4,7 +4,7 @@
 
 // modified from https://github.com/Flydroid/ADS12xx-Library
 // changed DRDY interrupt to polled mode
-// by J.Beale 13-Sept-2019
+// by J.Beale 14-Sept-2019
 
 int  START = 3;  // _SYNC input (unused- ADS pin tied high)
 int  CS =   21;
@@ -115,11 +115,22 @@ void setup()
 
   ADS2.SetRegisterValue(MUX, P_AIN0 | N_AIN1); // diff-in: (A0-A1)
   ADS2.SetRegisterValue(DRATE, DR_500);
+  delay(1);
+
+  int startNum = 50;  // how many to average
+  for (int i=0;i<startNum;i++) {
+    dc1 += (int32_t) ADS1.GetConversion();
+    dc2 += (int32_t) ADS2.GetConversion();
+  }
+  dc1 /= startNum;
+  dc2 /= startNum;
 }
 
 unsigned char i=0;
-int32_t dPerLine = 10;  // decimation ratio
+int32_t dPerLine = 5;  // decimation ratio
+unsigned char inter=0;  // interleaving index
 
+// =================================================================
 void loop() {
 
 unsigned char j,k;  // temp index into FIR[] and inbuf[]
@@ -134,24 +145,35 @@ int32_t raw1,raw2;  // raw ADC samples
   bptr = ++bptr % FIRsize;
 
   k = bptr;
-  fres1 = 0;
-  fres2 = 0;
-  for (j=0; j<FIRsize; j++) {  // implementation of n-tap FIR filter
-    fres1 += kern[j] * inbuf1[k];
-    fres2 += kern[j] * inbuf2[k];
-    k = ++k % FIRsize;
-  }
-  // at this point, fres contains the FIR-filtered output
-  // output is delayed (FIRsize/2) samples relative to input
+  inter = ++inter % 4;    // 4-phase interleaving index
+  switch (inter) {
+    case 0:          // calculate FIR filter on Ch.1
+      fres1 = 0;
+      for (j=0; j<FIRsize; j++) {  // implementation of n-tap FIR filter
+        fres1 += kern[j] * inbuf1[k];
+        k = ++k % FIRsize;
+      }
+      break;
+    case 1:          // calculate FIR filter on Ch.2
+      fres2 = 0;
+      for (j=0; j<FIRsize; j++) {  // implementation of n-tap FIR filter
+        fres2 += kern[j] * inbuf2[k];
+        k = ++k % FIRsize;
+      }
+      break;      
+    case 2:
+    case 3:
+      // at this point, fres1,2 has the FIR-filtered output
+      // output is delayed (FIRsize/2) samples relative to input
 
-  if (++i >= dPerLine) {
-   dc1 = (1.0-f)*dc1 + f*fres1;
-   dc2 = (1.0-f)*dc2 + f*fres2;
-   Serial.print(int(fres1-dc1));
-   Serial.print(",");
-   Serial.print(int(fres2-dc2));
-   Serial.println();
-    i = 0;  
+      if (++i >= dPerLine) {
+        dc1 = (1.0-f)*dc1 + f*fres1;
+        dc2 = (1.0-f)*dc2 + f*fres2;
+        Serial.print(int(fres1-dc1));
+        Serial.print(",");
+        Serial.print(int(fres2-dc2));
+        Serial.println();
+        i = 0;  
+      }
   }
-
 } // end loop()
