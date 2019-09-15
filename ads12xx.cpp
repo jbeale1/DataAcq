@@ -32,9 +32,10 @@ bool ads12xx::waitforDRDY(int rdy) {  // polled, not interrupt
   return true;
 }
 
-#define PAUSE delayMicroseconds(10)
+#define PAUSE delayMicroseconds(25) // was 10 usec
 
 // function to get a 3byte conversion result from the adc
+// BUGGY: sometimes skips a byte (!?)
 long ads12xx::GetConversion() {
 	int32_t regData;
 	if(ads12xx::waitforDRDY(_DRDY)==0){  // Wait until DRDY is LOW
@@ -42,27 +43,28 @@ long ads12xx::GetConversion() {
 		return 0;
 		};
 	SPI.beginTransaction(SPISettings(SPI_SPEED, MSBFIRST, SPI_MODE1));
+	PAUSE;
 	digitalWriteFast(_CS, LOW); //Pull SS Low to Enable Communications with ADS1247
-	delayMicroseconds(10); // RD: Wait 25ns for ADC12xx to get ready
+	PAUSE; PAUSE; // Datasheet claims 0 setup time needed here. Untrue?
 	SPI.transfer(RDATA); //Issue RDATA
-	delayMicroseconds(10);
+  PAUSE;
 
 	// assemble 3 bytes into one 32 bit word
   regData = ((uint32_t)SPI.transfer(NOP) << 16) & 0x00FF0000;
-  PAUSE;
+  // PAUSE;
   regData |= ((uint32_t)SPI.transfer(NOP) << 8);
-  PAUSE;
+  // PAUSE;
   regData |= SPI.transfer(NOP);
-  PAUSE;
+
+	// SPI.transfer(NOP); // for no reason?
+  PAUSE; PAUSE;
 	digitalWriteFast(_CS, HIGH);
+	// PAUSE;
 	SPI.endTransaction();
 
 	//  sign-extend negative 24-bit number to i32
   if (regData & 0x800000)
-	{
-		regData |= 0xFF000000;
-	}
-
+  	{	regData |= 0xFF000000; }
 	return regData;
 }
 
