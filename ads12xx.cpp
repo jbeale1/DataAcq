@@ -51,12 +51,9 @@ long ads12xx::GetConversion() {
 
 	// assemble 3 bytes into one 32 bit word
   regData = ((uint32_t)SPI.transfer(NOP) << 16) & 0x00FF0000;
-  // PAUSE;
   regData |= ((uint32_t)SPI.transfer(NOP) << 8);
-  // PAUSE;
   regData |= SPI.transfer(NOP);
 
-	// SPI.transfer(NOP); // for no reason?
   PAUSE; PAUSE;
 	digitalWriteFast(_CS, HIGH);
 	// PAUSE;
