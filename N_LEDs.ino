@@ -27,53 +27,38 @@ unsigned int dwait=20;
 uint8_t wc=0;
 uint8_t hue = 0;
 
-void hinc() {
-    hue += random8(30);  // add a small increment to current hue
-}
 
 void loop() { 
 unsigned int dmax;  // delay interval, msec
 
+// rainbow is about 0..192
 int pOffset = 18;  // LED spacing between pulses
-int hOffset = 50;  // hue delta between pulse colors
+int hOffset = 32;  // hue delta between pulse colors 
 int fRate = 45;    // fade rate per frame, % as fraction of 255
 uint8_t B;         // overall LED brightness setting (out of 255)
-
-  // hinc();
-  Serial.println(hue);
-
-  // B = 10+random8(80);
-  B = 50;
-  LEDS.setBrightness(B);
+int k;             // index for LED array
 
 
-// initial single color pulse from start to end
-	for(int i = 0; i < NUM_LEDS; i++) {
+hue = 0;   // 0 = red,64=yellow, 96 = green,160=blue, 192 = violet
+
+B = 50;
+LEDS.setBrightness(B);
+
+for (int n=1; n<8; n++) { // loop over # of groups
+  for (int i=0; i<(NUM_LEDS + n*pOffset); i++) { // over pixels
     fadeToBlackBy( leds, NUM_LEDS, fRate);
-		leds[i] = CHSV(hue, 255, 255);
-		FastLED.show(); 
-    FastLED.delay(1000/FRAMES_PER_SECOND); 
-	}
-
-// wait for LED trail to fade away
-  dmax = 60;
-  for(int i=0; i<dmax; i++) {
-    fadeToBlackBy( leds, NUM_LEDS, fRate);
+    for (int j=0; j<n; j++) {  // for each color group
+      if (n%2==0) // is n even?
+        k = (NUM_LEDS + j*pOffset) - i;
+      else // n is odd   
+        k = i - j*pOffset;
+        
+      if ((k >= 0) && (k < NUM_LEDS)) 
+        leds[k] = CHSV(hue + j*hOffset, 255, 255);
+    }
     FastLED.show();
-    FastLED.delay(1000/FRAMES_PER_SECOND);     
-  }
-  
-// two colors come back
-	for(int i = (NUM_LEDS)-1; i >= -pOffset; i--) {
-    int j = i+pOffset;
-    fadeToBlackBy( leds, NUM_LEDS, fRate);
-    if (i >= 0)
-  		leds[i] = CHSV(hue, 255, 255);
-    if (j < NUM_LEDS) 
-      leds[j] += CHSV(hue+hOffset, 255, 255);
-		FastLED.show();
     FastLED.delay(1000/FRAMES_PER_SECOND); 
-	}
+  }
 
 // wait for LED trail to fade away
   dmax = 60;
@@ -83,53 +68,52 @@ uint8_t B;         // overall LED brightness setting (out of 255)
     FastLED.delay(1000/FRAMES_PER_SECOND);     
   }
 
-// three colors go out
-  for(int i = 0; i< (NUM_LEDS)+(pOffset*2); i++) {
-    int j = i-pOffset;
-    int k = i-(2*pOffset);
+}
+// ======================================
+
+// red pulses from ends meet in middle
+ for (int i=0; i<(NUM_LEDS/2 - 1); i++) { // over 1/2 of pixels
     fadeToBlackBy( leds, NUM_LEDS, fRate);
-    if ((i >= 0) && (i < NUM_LEDS))
-      leds[i] = CHSV(hue, 255, 255);
-    if ((j < NUM_LEDS) && (j >= 0)) 
-      leds[j] += CHSV(hue+hOffset, 255, 255);
-    if ((k < NUM_LEDS) && (k >= 0)) 
-      leds[k] += CHSV(hue+(2*hOffset), 255, 255);
+    leds[i] = CHSV(hue, 255, 255);  // start from beginning
+    leds[(NUM_LEDS-1)-i] = CHSV(hue, 255, 255); // start from end
     FastLED.show();
-    FastLED.delay(1000/FRAMES_PER_SECOND); 
-  }
+    FastLED.delay(4000/FRAMES_PER_SECOND); 
+ }
 
+int d=16; // diameter of sparks blob
+// bright pulsing blob in center
+int br=245; // brightness of main spark
+for (int i=0; i<(FRAMES_PER_SECOND/3); i++) {
+  fadeToBlackBy( leds, NUM_LEDS, fRate);
+  int off = beatsin8(240, 0, 4);  // BPM, min, max
+  int mid = NUM_LEDS/2;
+  br += (random8(10)-8);
+  br = max(0,br);
+  leds[mid+off] += CRGB(br,br,br);
+  leds[mid-off] += CRGB(br,br,br);
+  if (random8(6)==0)
+    leds[mid+d/2-random8(d)] += CHSV(hue+random8(64),20+random8(200),128+random8(64));
+  if (random8(6)==0)
+    leds[mid+d/4-random8(d/2)] += CHSV(hue+random8(64),20+random8(200),180+random8(75));
+  FastLED.show();
+  FastLED.delay(1000/FRAMES_PER_SECOND); 
+}
 
-// wait for LED trail to fade away
-  dmax = 60;
-  for(int i=0; i<dmax; i++) {
+// yellow pulses escape from middle
+hue = 64; // supposedly yellow in color
+for (int i=(NUM_LEDS/2 - 1); i >= 0; i--) { // over 1/2 of pixels
     fadeToBlackBy( leds, NUM_LEDS, fRate);
+    leds[i] = CHSV(hue, 255, 255);  // start from beginning
+    leds[(NUM_LEDS-1)-i] = CHSV(hue, 255, 255); // start from end
     FastLED.show();
-    FastLED.delay(1000/FRAMES_PER_SECOND);     
-  }
+    FastLED.delay(4000/FRAMES_PER_SECOND); 
+ }
 
 
-// four colors come back
-  for(int i = (NUM_LEDS)-1; i >= -(pOffset*3); i--) {
-    int j = i+pOffset;
-    int k = i+2*pOffset;
-    int l = i+3*pOffset;
-    
-    fadeToBlackBy( leds, NUM_LEDS, fRate);
-    if ((i >= 0) && (i < NUM_LEDS))
-      leds[i] = CHSV(hue, 255, 255);
-    if ((j >= 0) && (j < NUM_LEDS))
-      leds[j] += CHSV(hue+hOffset, 255, 255);
-    if ((k >= 0) && (k < NUM_LEDS))
-      leds[k] += CHSV(hue+2*hOffset, 255, 255);
-    if ((l >= 0) && (l < NUM_LEDS))
-      leds[l] += CHSV(hue+3*hOffset, 255, 255);
 
-    FastLED.show();
-    FastLED.delay(1000/FRAMES_PER_SECOND); 
-  }
 
 // wait for LED trail to fade away at end
-  dmax = 400;
+  dmax = 250;
   for(int i=0; i<dmax; i++) {
     fadeToBlackBy( leds, NUM_LEDS, 20);
     FastLED.show();
