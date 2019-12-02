@@ -106,6 +106,7 @@ char time_string[40]; // time/date string
   seconds = ptm->tm_sec;  // current time, seconds of the minute
   strftime (time_string, sizeof (time_string), "%Y-%m-%d %H:%M:%S", ptm);
   printf(" %s  usec: %ld\n", time_string, usec[2]);
+  gpioDelay(100000);  // make sure we're safely away from the start of the second
 
   } while (1);
 
