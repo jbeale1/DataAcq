@@ -1,9 +1,12 @@
+// =========================================================================
 // Scrolling data plot on 128x64 OLED display
 // for example amazon.com/gp/product/B076PDVFQD/
 // J.Beale 12-July-2020
+// =========================================================================
 
 #include <Arduino.h>
-#include <U8g2lib.h>
+#include <U8g2lib.h>  // for OLED display
+#include <TimeLib.h>  // for real-time clock display
 
 #ifdef U8X8_HAVE_HW_SPI
 #include <SPI.h>
@@ -11,6 +14,9 @@
 #ifdef U8X8_HAVE_HW_I2C
 #include <Wire.h>
 #endif
+
+#define TIME_HEADER  "T"   // Header tag for serial time sync message
+#define TIME_REQUEST  7    // ASCII bell character requests a time sync message 
 
 
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
@@ -83,7 +89,7 @@ void dataUpdate(uint8_t offset) {
   data[offset] = a;
   
   minmaxData();  // update min,max vals
-  Serial.println(dmin);
+  // Serial.println(dmin);
 } // end dataUpdate()
 
 // ==========================================================================
@@ -91,8 +97,9 @@ void dataUpdate(uint8_t offset) {
 void setup(void) {
   Serial.begin(9600);
   delay(2000);
-  Serial.println("OLED start 1");
-  
+  Serial.println("OLED Data Display v1");
+  Serial.println("Waiting for Time Sync message");
+
   u8g2.begin();  
   u8g2.setFont(FONTNAME);  // set the target font to calculate the pixel width
   u8g2.setFontMode(0);    // enable transparent mode, which is faster
@@ -101,22 +108,51 @@ void setup(void) {
 
 // ============================================================================
 uint8_t i=0;
+char dstring[20] = "200712 21:44:04";
 
 void loop(void) {
+
+  if (Serial.available()) {
+    processSyncMessage();
+  }
+  if (timeStatus()!= timeNotSet) {
 
   dataUpdate(i);  // insert new reading into data[]
   i++;
   if (i >= DSIZE) {i=0;}
 
+  // generate string with date/time as "YYMMDD HH:MM:SS"
+  sprintf(dstring,"%02d%02d%02d %02d:%02d:%02d",year()%100,month(),day(),hour(),minute(),second());
+  // Serial.println(dstring); 
+  
   u8g2.firstPage();  
   do {
     u8g2.setCursor(1,9);  // show min, max values of data
     u8g2.print(dmin);
-    u8g2.setCursor(30,9);
+    u8g2.setCursor(26,9);
     u8g2.print(dmax);
+    u8g2.setCursor(54,9); // show current date and time
+    u8g2.print(dstring);
+
     u8g2_plot(i);
 
   } while( u8g2.nextPage() ); // loop until full display refreshed
 
   // delay(10);  // delay in animation loop
+  }
 } // end loop()
+
+
+// ===========================================================================
+// set Real-Time Clock
+
+void processSyncMessage() {
+  unsigned long pctime;
+  const unsigned long DEFAULT_TIME = 1594591998; // 12-July-2020 when first compiled
+  if(Serial.find(TIME_HEADER)) {
+     pctime = Serial.parseInt();
+     if( pctime >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
+       setTime(pctime); // Sync Arduino clock to the time received on the serial port
+     }
+  }
+}
