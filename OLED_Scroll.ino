@@ -50,10 +50,11 @@ void u8g2_plot(uint16_t offset) {  // plot graph, auto-scaled vertically to fit 
 } // end u8g2_plot()
 
 // ==========================================================================
+// find largest and smallest value in array
 
 void minmaxData() {
 dmax = 0;
-dmin = 2^15+1;
+dmin = 65535;
 
   for (int i=0;i<DSIZE;i++) {
     if (data[i]>dmax) dmax=data[i];
@@ -61,22 +62,39 @@ dmin = 2^15+1;
   }
 } // end minmaxData()
 
+
+// ==========================================================================
+// --- load in an initial waveform to data array
 void loadData() {
   for (int i=0;i<DSIZE;i++) {
-    data[i] = 2000.0 * (sin(i/6.0) + 1.0) * (sin(i/70.0)+1.0);
+    data[i] = 1000 + 2000.0 * (sin(i/6.0) + 1.0) * (sin(i/70.0)+1.0);
   }
   minmaxData();
 } // end loadData()
 
-void dataUpdate(uint8_t offset) {
-  data[offset] = 10 * analogRead(sensorPin);
+// ==========================================================================
+// read new analog data, and insert into array
+
+void dataUpdate(uint8_t offset) {  
+  uint16_t a = 0;
+  for (uint8_t i=0;i<10;i++) {
+    a += analogRead(sensorPin);
+  }
+  data[offset] = a;
+  
   minmaxData();  // update min,max vals
+  Serial.println(dmin);
 } // end dataUpdate()
 
+// ==========================================================================
+
 void setup(void) {
+  Serial.begin(9600);
+  delay(2000);
+  Serial.println("OLED start 1");
+  
   u8g2.begin();  
   u8g2.setFont(FONTNAME);  // set the target font to calculate the pixel width
-  // width = u8g2.getUTF8Width(text);    // calculate the pixel width of the text 
   u8g2.setFontMode(0);    // enable transparent mode, which is faster
   loadData();             // fill data[] array
 }
@@ -88,7 +106,7 @@ void loop(void) {
 
   dataUpdate(i);  // insert new reading into data[]
   i++;
-  if (i >= sxmax) {i=0;}
+  if (i >= DSIZE) {i=0;}
 
   u8g2.firstPage();  
   do {
@@ -100,5 +118,5 @@ void loop(void) {
 
   } while( u8g2.nextPage() ); // loop until full display refreshed
 
-  // delay(10);  // delay in animatino loop
+  // delay(10);  // delay in animation loop
 } // end loop()
