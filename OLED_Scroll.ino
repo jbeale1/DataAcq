@@ -17,13 +17,8 @@ U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 const int sensorPin = A0;  // analog input signal
 
-  // u8g2_font_5x8_mr
-  // u8g2_font_6x12_mr
-  // u8g2_font_10x20_mr
-
 #define FONTNAME u8g2_font_5x8_mr
 u8g2_uint_t width;      // pixel width of the scrolling text (must be lesser than 128 unless U8G2_16BIT is defined
-const char *text = "OLED test ";  // scroll this text from right to left
 
 // DSIZE is how many elements our data buffer contains (eg. # columns we can display on graph)
 #define DSIZE 128
@@ -34,14 +29,7 @@ const unsigned int sxmax = 128;  // # of pixels across display horizontally
 const unsigned int symax = 64;   // # of pixels down display vertically
 // ===========================================================================
 
-void u8g2_line(uint8_t a) {
-  u8g2.drawLine(7+a, 10, 40, 55);
-  u8g2.drawLine(7+a*2, 10, 60, 55);
-  u8g2.drawLine(7+a*3, 10, 80, 55);
-  u8g2.drawLine(7+a*4, 10, 100, 55);
-}
-
-void u8g2_plot(uint16_t offset) {
+void u8g2_plot(uint16_t offset) {  // plot graph, auto-scaled vertically to fit display
 
   uint16_t ii;
   uint8_t yv,last;
@@ -88,7 +76,7 @@ void dataUpdate(uint8_t offset) {
 void setup(void) {
   u8g2.begin();  
   u8g2.setFont(FONTNAME);  // set the target font to calculate the pixel width
-  width = u8g2.getUTF8Width(text);    // calculate the pixel width of the text 
+  // width = u8g2.getUTF8Width(text);    // calculate the pixel width of the text 
   u8g2.setFontMode(0);    // enable transparent mode, which is faster
   loadData();             // fill data[] array
 }
