@@ -1,16 +1,20 @@
-// generate 10 kHz pulse
+// generate ~7 kHz pulses for sonar experiment
+// output is differential between pOut1 and pOut2
+// use non-polar capacitor to avoid DC bias on transducer
+// 10-AUG-2020 J.Beale
 
 #include <digitalWriteFast.h>
 
 #define DCOUNT 5
 
-// 7.11 kHz = 140 usec period
-const uint8_t dur[DCOUNT]={64, 67, 70, 73, 76};  // microseconds of half period
+// resonance with tweeter open to air: 7.11 kHz = 140 usec period 
+// in pipe, resonant freq. goes up (closer to 7.8 kHz, 128 usec period)
+const uint8_t dur[DCOUNT]={52, 56, 60, 64, 67};  // microseconds of half period
 
 const int tQuiet=200; // how many milliseconds before next pulse
 
-const int pOut1 = 8;  // output pulse
-const int pOut2 = 9;  // output pulse
+const int pOut1 = 8;  // to transducer + lead
+const int pOut2 = 9;  // to transducer - lead
 
 const uint8_t pMax = 6;
 const uint8_t pMin = 1; // 1,10
@@ -21,7 +25,6 @@ uint8_t di;    // index into duration array dur[]
 #define dLo  digitalWriteFast(pOut1, LOW); digitalWriteFast(pOut2, HIGH)   // positive side
 #define Wait delayMicroseconds(dur[di])
 
-// the setup routine runs once when you press reset:
 void setup() {
   // initialize the digital pin as an output.
   pinMode(pOut1, OUTPUT);
@@ -31,11 +34,11 @@ void setup() {
 } // end setup()
 
 
-// the loop routine runs over and over again forever:
 void loop() {
 
  for (di=0;di<DCOUNT;di++) {  // loop over pulse frequencies
-    pcount = pMin;
+  
+    pcount = pMin;  // short pulse
     noInterrupts();
     for (uint8_t i=0;i<pcount;i+=1) {
       dHi; Wait; dLo; Wait;
@@ -59,4 +62,4 @@ void loop() {
 
  delay(tQuiet*2);               // wait for a longer while
 
-}
+} // end loop()
