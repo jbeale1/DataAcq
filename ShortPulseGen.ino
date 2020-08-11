@@ -1,5 +1,8 @@
 // generate ~7 kHz pulses for sonar experiment
 // output is differential between pOut1 and pOut2
+// cheap 2.5kHz - 45kHz piezo tweeter: Kemo Electronic P5123
+// www.kemo-electronic.de/en/Car/Speaker/P5123-Mini-piezoelectric-tweeter-for-M094N.php
+// resonant frequency depends on mounting and enclosure details
 // use non-polar capacitor to avoid DC bias on transducer
 // 10-AUG-2020 J.Beale
 
