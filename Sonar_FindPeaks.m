@@ -129,12 +129,17 @@ until (Tidx > pcount-2)  # | (pulseNum> 84)
 #yAccum = yAccum ./ pulseNum;  # scale sum to form average
 # plot(1:wSize+1,yAccum);       # show averaged waveform
 
+D1Mean = mean(dm(:,1,1));
+D2Mean = mean(dm(:,2,1));
+D1Real = 3.062;  # measured distance to 1st coupler
+cfactor = D1Real / D1Mean;    # length correction factor based on known distance
+
 printf("------------------------------------\n");
 printf("%s  ", infile);
 printf(" %d kHz  %5.3f sec  %d pulses %4.1f m/s\n", int32(fs/1000),file_dur,size(dm)(1),soundSpd);
-printf("avg (std): D1: %5.3f (%4.4f) m  D2: %5.3f (%4.4f) m  (%4.4f) (%4.4f)\n", 
-  mean(dm(:,1,1)), std(dm(:,1,1)), mean(dm(:,2,1)), std(dm(:,2,1)), 
-  std(dm(:,1,2)), std(dm(:,2,2)) );
+printf("avg (std): D1: %5.3f (%4.4f) m  D2: %5.3f (%4.4f) m  (%5.4f) D2a: %5.3f m\n", 
+  D1Mean, std(dm(:,1,1)), D2Mean, std(dm(:,2,1)), 
+  cfactor, D2Mean*cfactor);
 
 
 # ==========================================================
@@ -158,7 +163,8 @@ avg (std): D1: 3.035 (0.0010) m  D2: 5.438 (0.0095) m  (0.0032) (0.0040)
 20200814_144418_Pipe12_192.wav   192 kHz  22.708 sec  112 pulses 339.0 m/s
 avg (std): D1: 3.038 (0.0006) m  D2: 5.455 (0.0006) m  (0.0011) (0.0010)
 
-20200814_151444_Pipe13_192_b.wav   192 kHz  16.173 sec  80 pulses 339.0 m/s (new coupler)
-avg (std): D1: 3.016 (0.0004) m  D2: 5.433 (0.0005) m  (0.0008) (0.0008)
+(new coupler)
+20200814_151444_Pipe13_192_b.wav   192 kHz  16.173 sec  80 pulses 339.0 m/s
+avg (std): D1: 3.016 (0.0004) m  D2: 5.433 (0.0005) m  (1.0153) D2a: 5.516 m
 
 #}
