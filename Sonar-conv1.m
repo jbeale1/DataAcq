@@ -1,5 +1,5 @@
-# Sonar Ranging calculation: find distance between pulse and echo
-# v0.2 J.Beale 21-AUG-2020
+# Sonar Ranging calculation: find distane between pulse and echo
+# v0.3 J.Beale 22-AUG-2020
 
 pkg load signal                  # for xcorr, resample
 
@@ -9,17 +9,18 @@ p.pThresh2 = 0.55;                 # 2ndary corr. peaks of initial pulse can rea
 p.minPkDist = 80;                  # minimum allowed distance between peaks
 
 p.msOff1 = 0.4;                    # (msec) pulse window start before pulse edge
-p.msOff2 = 1.7;                    # (msec) pulse window length (1.7 ms best for pk.2)
+p.msOff2 = 1.0;                    # (msec) pulse window length (1.7 ms best for pk.2)
+p.holdoff = 0.625;                 # (msec) start looking for echoes this long after Tx pulse
 
 p.wOff1 = 3.5;                     # (msec) signal window before edge
 p.wOff2 = 15;                      # (msec) signal window size (was 20)
 
 p.speed = 346.06;                  # sound speed (m/s) at 77 F / 25 C
-p.p=400;                           # p/q is oversample ratio
+p.p=800;                           # p/q is oversample ratio
 p.q=1;				 # denominator of oversample ratio
 # --------------------------------------------------------------------------------------------
 
-function [dist pks] = findDist(yr, fs, p)   # find distance to first reflection in inputdata
+function [dist hRet] = findDist(yr, fs, p)   # find dist. & corr. of first reflec in (yr)
 
   pStart = find(yr>p.pThresh);   # find index of start of pulse
   iwoff1 = int32(p.wOff1 / 1E3 * fs);         # start of pulse window
@@ -45,8 +46,13 @@ function [dist pks] = findDist(yr, fs, p)   # find distance to first reflection 
   [pks idx] = findpeaks(Rn,"MinPeakHeight",p.pThresh2,"MinPeakDistance",p.minPkDist);
              # idx(1) = initial pulse, idx(2) = end refl. idx(3) = back reflection
 
-  delta = diff(idx);           # distance (idx count) between successive peaks
-  etime = delta(1) / fsr;      # (sec) = index count / sample rate
+  [w, iPk] = max(Rn);     # iPk is index of Tx peak
+  iWin = iPk + ((p.holdoff/1E3) * fsr); # index of beginning of valid return
+  [hRet, iRet] = max(Rn(iWin:end));  # find largest return peak
+  iRet += iWin;                      # adjust index for window offset in Rn()
+
+  delta = iRet-iPk;            # distance (idx count) between successive peaks
+  etime = delta / fsr;         # (sec) = index count / sample rate
   dist = (p.speed * etime)/2;    # one-way trip = round-trip / 2
 
 endfunction
@@ -55,21 +61,20 @@ endfunction
 # Main program starts here
 
 #infile='recData_0820_1010.wav';  # filename with stereo recording
-#infile='R_1598021217.wav';
-#infile='R_1598019458.wav';
+#infile='R_1598112250.wav';
 
 arg_list = argv ();              # command-line inputs to this function
 infile = arg_list{1};
 
-[yraw, fs] = audioread(infile);  # load in data from audio wav file
+[yraw, fs] = audioread(infile);  # load in data from wav file
 
-[dist1 pks1] = findDist(yraw(:,1),fs,p);             # find distance to reflection on this trace
-[dist2 pks2] = findDist(yraw(:,2),fs,p);             # find distance to reflection on this trace
+[dist1 c1] = findDist(yraw(:,1),fs,p);             # find distance to reflection on this trace
+[dist2 c2] = findDist(yraw(:,2),fs,p);             # find distance to reflection on this trace
 
 fseq = strsplit(infile,"/");       # split full pathname into parts
 fname = char(fseq(1,end));         # get just the filename
 
-d12 = 1E3 * (dist2-dist1);  # difference in distance on ch1 and ch2, in mm
-printf("%s %8.6f %8.6f %6.3f %5.3f %5.3f\n",fname,dist1,dist2,d12,pks1(2),pks2(2));
+d12 = dist2-dist1;  # difference in distance on ch1 and ch2
+printf("%s %8.6f %8.6f %8.6f %5.4f %5.4f\n",fname,dist1,dist2,d12,c1,c2);
 
 # ====================================================================================
