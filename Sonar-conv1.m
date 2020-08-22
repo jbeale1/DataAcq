@@ -1,4 +1,4 @@
-# Sonar Ranging calculation: find distane between pulse and echo
+# Sonar Ranging calculation: find time & distance from Tx pulse to Rx echo
 # v0.3 J.Beale 22-AUG-2020
 
 pkg load signal                  # for xcorr, resample
@@ -12,15 +12,16 @@ p.msOff1 = 0.4;                    # (msec) pulse window start before pulse edge
 p.msOff2 = 1.0;                    # (msec) pulse window length (1.7 ms best for pk.2)
 p.holdoff = 0.625;                 # (msec) start looking for echoes this long after Tx pulse
 
-p.wOff1 = 3.5;                     # (msec) signal window before edge
-p.wOff2 = 15;                      # (msec) signal window size (was 20)
+p.wOff1 = 3.5;                     # (msec) full signal: start before Tx
+p.wOff2 = 15;                      # (msec) full signal: window size
 
 p.speed = 346.06;                  # sound speed (m/s) at 77 F / 25 C
 p.p=800;                           # p/q is oversample ratio
-p.q=1;				 # denominator of oversample ratio
+p.q=1;				   # denominator of oversample ratio
 # --------------------------------------------------------------------------------------------
 
-function [dist hRet] = findDist(yr, fs, p)   # find dist. & corr. of first reflec in (yr)
+# find distance (meters) and correlation (0..1: quality value) to largest reflection
+function [dist hRet] = findDist(yr, fs, p)
 
   pStart = find(yr>p.pThresh);   # find index of start of pulse
   iwoff1 = int32(p.wOff1 / 1E3 * fs);         # start of pulse window
@@ -51,17 +52,17 @@ function [dist hRet] = findDist(yr, fs, p)   # find dist. & corr. of first refle
   [hRet, iRet] = max(Rn(iWin:end));  # find largest return peak
   iRet += iWin;                      # adjust index for window offset in Rn()
 
-  delta = iRet-iPk;            # distance (idx count) between successive peaks
+  delta = iRet-iPk;            # index count from Tx to Rx peaks
   etime = delta / fsr;         # (sec) = index count / sample rate
-  dist = (p.speed * etime)/2;    # one-way trip = round-trip / 2
+  dist = (p.speed * etime)/2;  # one-way trip (meters) = round-trip / 2
 
 endfunction
+
 
 # ====================================================================================
 # Main program starts here
 
-#infile='recData_0820_1010.wav';  # filename with stereo recording
-#infile='R_1598112250.wav';
+#infile='R_1598112250.wav';       # file with stereo (2-channel) recording
 
 arg_list = argv ();              # command-line inputs to this function
 infile = arg_list{1};
