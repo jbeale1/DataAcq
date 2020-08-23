@@ -1,7 +1,5 @@
 # Sonar Ranging calculation: find time & distance from Tx pulse to Rx echo
-# tuned for vertical pipe with inset joint near 3m
-
-# v0.4 J.Beale 22-AUG-2020
+# v0.3 J.Beale 22-AUG-2020
 
 pkg load signal                  # for xcorr, resample
 
@@ -22,7 +20,7 @@ p.wLen = 39 ;                      # (msec) full signal: window size
 #p.speed = 346.06;                  # sound speed (m/s) at 77 F / 25 C
 p.speed = 339.6;                  # sound speed (m/s) at 14 C  (339.02 @ 13 C)
 #p.p=800;                           # p/q is oversample ratio
-p.p=200;                           # p/q is oversample ratio
+p.p=100;                           # p/q is oversample ratio
 p.q=1;				   # denominator of oversample ratio
 p.factor = 1.0;                    # scaling factor for pulse in correlation
 # --------------------------------------------------------------------------------------------
@@ -77,20 +75,40 @@ infile = arg_list{1};
 
 [yraw, fs] = audioread(infile);  # load in data from wav file
 
+# search for bottom-of-pipe reflection (+)
+
 [dist1 c1] = findDist(yraw(:,1),fs,p);             # find distance to reflection on this trace
 [dist2 c2] = findDist(yraw(:,2),fs,p);             # find distance to reflection on this trace
 
+# search for closer pipe joint reflection (expanded diam. section, so -)
+
 p.wLen = 25;                      # (msec) full signal: window size to find pipe joint near 3.2m / 19 ms
 p.factor = -1;                    # look for inverted reflection
+p.msOff2 = 0.5;                   # (msec) pulse window length 
 
 [dist3 c3] = findDist(yraw(:,1),fs,p);             # find distance to reflection on this trace
 [dist4 c4] = findDist(yraw(:,2),fs,p);             # find distance to reflection on this trace
 
 fseq = strsplit(infile,"/");       # split full pathname into parts
 fname = char(fseq(1,end));         # get just the filename
+tstamp = fname(3:12);
+kHz = fs/1000;                     # sample rate in kHz
+maxC1 = max(abs(yraw(:,1)));
+maxC2 = max(abs(yraw(:,2)));
 
+nomDiff = 0.087;  # nominal separation between microphones
 d12 = dist2-dist1;  # difference in distance on ch1 and ch2 - water bottom
 d34 = dist4-dist3;  # difference in distance on ch1 and ch2 - pipe joint
+
+chk1 = d12-nomDiff;  # is there a large difference from expected value?
+# chk2 = d34-nomDiff;  # more fragile for some reason
+
+if (abs(chk1) > 0.01)
+  printf("# ");
+  system('touch /dev/shm/R_flag.wav');  # flag the error
+endif
+
+printf("%s %d %4.2f %4.2f ",tstamp,kHz,maxC1,maxC2);
 printf("%7.5f %7.5f %7.5f %5.4f %5.4f ",dist1,dist2,d12,c1,c2);
 printf("%7.5f %7.5f %7.5f %5.4f %5.4f\n",dist3,dist4,d34,c3,c4);
 
