@@ -1,39 +1,42 @@
 # Sonar Ranging calculation: find time & distance from Tx pulse to Rx echo
-# v0.5 J.Beale 23-AUG-2020
+# v0.6 J.Beale 24-AUG-2020
 
 pkg load signal                  # for xcorr, resample
 
-# --------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
-p.tOff00 = 0.05;                    # seconds: ROI offset from start of file
-p.tOff0 = 0.05;                    # seconds: ROI offset from start of file
-p.tW = 0.120;                      # seconds: ROI window size
-p.tWs = 0.203;                     # seconds: step interval between pulses
+p.tOff00 = 0.05;           # seconds: initial ROI offset from start of file
+p.tOff0 = 0.05;            # seconds: current ROI offset from start of file
+p.tW = 0.120;              # seconds: ROI window size
+p.tWs = 0.203;             # seconds: step interval between pulses
 
-p.pThresh = 0.3;                   # 1st sample above this level is start of outgoing pulse
-p.pThresh2 = 0.55;                 # 2ndary corr. peaks of initial pulse can reach 0.4
-p.minPkDist = .002;                # minimum allowed time between peaks (s)
+p.pThresh = 0.3;           # 1st sample above this level is Tx pulse start
+p.pThresh2 = 0.55;         # 2ndary corr. peaks of initial pulse can reach 0.4
+p.minPkDist = .002;        # minimum allowed time between peaks (s)
 
-p.msOff1 = 0.37;                    # (msec) pulse window start before pulse edge (was 0.26)
-p.msOff2 = 0.55;                    # (msec) pulse window length (1.7 ms best for pk.2) was 1.0,0.6
-p.holdoff = 16;                 # (msec) start looking for echoes this long after Tx pulse
+p.msOff1 = 0.37;           # (msec) pulse window start before pulse edge
+p.msOff2 = 0.55;           # (msec) pulse window length (1.7 ms best for pk.2)
+p.holdoff = 16;            # (msec) start looking for echoes this long after Tx
+p.twi2 = 0.002;            # target Rx window width in seconds
 
-# 18..20 msec: location of pipe joint at 10'0.5" (3.061 m) from top (RTT: 18.03 ms)
+# 18..20 msec: location of pipe joint at 10'0.5" (3.061 m) (RTT: 18.03 ms)
 
 p.wOff1 = 3.5;                     # (msec) full signal: start before Tx
 p.wLen = 42 ;                      # (msec) full signal: window size
 
 #p.speed = 346.06;                  # sound speed (m/s) at 77 F / 25 C
-p.speed = 339.6;                  # sound speed (m/s) at 14 C  (339.02 @ 13 C)
-#p.p=100;                           # p/q is oversample ratio
+p.speed = 339.6;                   # sound speed (m/s) at 14 C  (339.02 @ 13 C)
+#p.p=100;                          # p/q is oversample ratio
 p.p=50;                            # p/q is oversample ratio
-p.q=1;				   # denominator of oversample ratio
+p.q=1;				                     # denominator of oversample ratio
 p.factor = 1.0;                    # scaling factor for pulse in correlation
-# --------------------------------------------------------------------------------------------
 
-# find distance (meters) and correlation (0..1: quality value) to largest reflection
-#function [dist hRet] = findDist(yr, fs, p)
-function [r] = findDist(yr, fs, p)
+# --------------------------------------------------------------------------------------------
+# findDist()
+# find distance (m) and correlation (0..1: quality value) to largest reflection
+# Start looking for Tx,Rx signals at offset time p.tOff0 into array w
+
+function [r] = findDist(w, fs, p)
 
   r.dist=0;
   r.hRet=0;
@@ -42,15 +45,15 @@ function [r] = findDist(yr, fs, p)
   ioff = int32(fs * p.tOff0); # ROI_0 initial offset into file
   iwide = int32(fs * p.tW);   # ROI_0 width of window
   iend = ioff+iwide;
-  if (iend > length(yr))
+  if (iend > length(w))
     return
   endif
 
-  yr0 = yr(ioff:iend);  # ROI_0 containing one signal + return set
+  yr0 = w(ioff:iend);  # ROI_0 containing one signal + return set
   [pk, ipk] = max(yr0);  # find peak, which is top of Tx pulse
   r.max = pk;            # peak +amplitude within ROI
 
-  # pStart = find(yr>p.pThresh);   # find index of start of pulse
+  #r.yr0 = yr0;    # DEBUG
 
                                             # ROI_1 is tight window on TxRx
   iwoff1 = int32(p.wOff1 / 1E3 * fs);       # start of ROI_1 pulse window
@@ -72,6 +75,7 @@ function [r] = findDist(yr, fs, p)
 
   Rn = max(0,R ./ max(R));	 # normalize for peak=1.0, clamp neg to 0
   #plot(lag,Rn);
+  #r.Rn = Rn;         # DEBUG
 
   [pks idx] = findpeaks(Rn,"MinPeakHeight",p.pThresh2,"MinPeakDistance",p.minPkDist*fs);
              # idx(1) = initial pulse, idx(2) = end refl. idx(3) = back reflection
@@ -83,8 +87,6 @@ function [r] = findDist(yr, fs, p)
   delta = iRet-iPk;            # index count from Tx to Rx peaks
 
 # based on coarse location of the return, refine it  w/ resampled data
-
-  p.twi2 = 0.003;                      # target window width in seconds
 
   rfac = int32(p.p/p.q);               # integer resample factor
   yr = resample(y,p.p,p.q);            # resample(y,p,q) y at new rate p/q
@@ -113,8 +115,7 @@ endfunction
 # Main program starts here
 
 #infile='R_1598112250.wav';       # file with stereo (2-channel) recording
-#infile='R_1598206307b.wav';
-#infile='R_1598199872.wav';
+infile='R_1598206307b.wav';
 
 arg_list = argv ();              # command-line inputs to this function
 infile = arg_list{1};
@@ -125,8 +126,8 @@ fseq = strsplit(infile,"/");       # split full pathname into parts
 fname = char(fseq(1,end));         # get just the filename
 tstamp = fname(3:12);
 kHz = fs/1000;                     # sample rate in kHz
-maxC1 = max(abs(yraw(:,1)));       # maximum value in channel
-maxC2 = max(abs(yraw(:,2)));
+# maxC1 = max(abs(yraw(:,1)));       # maximum value in channel
+# maxC2 = max(abs(yraw(:,2)));
 
 
 # search for bottom-of-pipe reflection (+)
@@ -134,47 +135,45 @@ maxC2 = max(abs(yraw(:,2)));
 #[dist1 c1] = findDist(yraw(:,1),fs,p);             # find distance to reflection on this trace
 # =====================================================================================
 
-pi=0;         # pulse set index
+pti=0;         # pulse train index
 
 while ( 1 )
 
-  r1 = findDist(yraw(:,1),fs,p);             # find distance to reflection on ch.1
+  r1 = findDist(yraw(:,1),fs,p);      # find distance to reflection on ch.1
   if (r1.hRet < 0.01)
     break
   endif
 
-  r2 = findDist(yraw(:,2),fs,p);             # find distance to reflection on ch.2
+  r2 = findDist(yraw(:,2),fs,p);      # find distance to reflection on ch.2
   if (r2.hRet < 0.01)
     break
   endif
 
-  pi += 1;   # we've got a set of pulse data
-  dist(pi,1) = r1.dist;
-  dist(pi,2) = r2.dist;
-  cor(pi,1) = r1.hRet;
-  cor(pi,2) = r2.hRet;
-  max(pi,1) = r1.max;
-  max(pi,2) = r2.max;
+  pti += 1;   # we've got a set of pulse data
+  dist(pti,1) = r1.dist;
+  dist(pti,2) = r2.dist;
+  cor(pti,1) = r1.hRet;
+  cor(pti,2) = r2.hRet;
+  max(pti,1) = r1.max;
+  max(pti,2) = r2.max;
 
-  p.tOff0 += p.tWs;                                   # move ahead to next Tx/Rx pair
+  p.tOff0 += p.tWs;                   # move ahead to next Tx/Rx pair
 endwhile
 
-if (pi > 0)
+if (pti > 0)  # don't print anything, if no signals detected
 
   #printf("%7.5f %5.3f\n",dist1, c1);
 
+  # ----------------------------------------------
   # search for closer pipe joint reflection (expanded diam. section, so -)
-  #p.wLen = 25;                      # (msec) full signal: window size to find pipe joint near 3.2m / 19 ms
-  #p.factor = -1;                    # look for inverted reflection
-  #p.msOff2 = 0.5;                   # (msec) pulse window length
-  #[dist3 c3] = findDist(yraw(:,1),fs,p);             # find distance to reflection on this trace
-  #[dist4 c4] = findDist(yraw(:,2),fs,p);             # find distance to reflection on this trace
 
-  dist3=3.16741;  # DEBUG placeholder
-  dist4=3.25664;  # DEBUG placeholder
-  c3=0.1455;      # DEBUG placeholder
-  c4=0.1022;      # DEBUG placeholder
+  p.wLen = 24;      # (msec) full signal: window size for joint near 3.2m 19 ms
+  p.factor = -1;    # look for inverted reflection
+  p.msOff2 = 0.5;   # (msec) pulse window length
+  p.tOff0 = p.tOff00;  # reset to start of signal
 
+  r3 = findDist(yraw(:,1),fs,p);  # find distance to Rx on ch.1
+  r4 = findDist(yraw(:,2),fs,p);  # find dist on ch.2
 
   dist1 = mean(dist(:,1));  # average distance Ch.1
   dist2 = mean(dist(:,2));  # avg. dist Ch.2
@@ -186,7 +185,7 @@ if (pi > 0)
   nomDiff = 0.087;  # nominal separation between microphones
 
   d12 = dist2-dist1;  # difference in distance on ch1 and ch2 - water bottom
-  d34 = dist4-dist3;  # difference in distance on ch1 and ch2 - pipe joint
+  d34 = r4.dist-r3.dist;  # difference in distance on ch1 and ch2 - pipe joint
 
   chk1 = d12-nomDiff;  # is there a large difference from expected value?
   # chk2 = d34-nomDiff;  # more fragile for some reason
@@ -200,9 +199,8 @@ if (pi > 0)
 
   printf("%s %d %5.3f %5.3f ",tstamp,kHz,max1,max2);
   printf("%7.5f %7.5f %7.5f %5.4f %5.4f ",dist1,dist2,d12,c1,c2);
-  printf("%7.5f %7.5f %7.5f %5.4f %5.4f\n",dist3,dist4,d34,c3,c4);
+  printf("%7.5f %7.5f %7.5f %5.4f %5.4f\n",r3.dist,r4.dist,d34,r3.hRet,r4.hRet);
 
 endif
-
 
 # ====================================================================================
