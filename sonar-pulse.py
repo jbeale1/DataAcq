@@ -1,7 +1,16 @@
 #!/usr/bin/python3
 
-# Transmit sonar pulse and record return signal
-# J.Beale v0.5 22-AUG-2020
+# Play audio file and record mic input at the same time, for sonar application
+# v0.6 21-SEP-2020 J.Beale
+
+# sudo apt install python3-pip
+# python3 -m pip install sounddevice
+# pip3 install soundfile
+# pip3 install numpy
+# sudo apt install libatlas-base-dev
+
+#   set full volume out:
+# amixer -c 1 cset name='Speaker Playback Volume' 100%
 
 import argparse
 import sounddevice as sd
@@ -50,19 +59,21 @@ ofname = 'R_' + str(sec) + '.wav'
 
 try:
     data, fs = sf.read(args.filename, dtype='float32')
+    #print("Play fs: %d\n",fs)
+
     # sd.play(data, fs, device=args.device)  # play 'data' array at fs sample rate
     recdata = sd.playrec(data, fs, channels=recChan, device=args.device) # play data array AND record recChan channels
     # recdata is a [n][recChan] array of float32 type (?)
     status = sd.wait()  # wait here until playback is done
 
-    pk1 = np.amax(recdata[:,0])  # peak recorded value (positive)
-    pk2 = np.amax(recdata[:,1]) 
+    #pk1 = np.amax(recdata[:,0])  # peak recorded value (positive)
+    #pk2 = np.amax(recdata[:,1]) 
 
     opath= outdir + "/" + ofname
     sf.write(opath, recdata, fs)  # save recorded data to file
     tstamp = ofname[2:-4]
-    print("%s %d %4.2f %4.2f " % (tstamp,int(fs/1000),pk1,pk2),end="")
-
+    # print("%s %d %4.2f %4.2f " % (tstamp,int(fs/1000),pk1,pk2),end="")
+    print("%s" % opath);
 
 except KeyboardInterrupt:
     parser.exit('\nInterrupted by user')
