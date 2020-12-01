@@ -1,3 +1,4 @@
+// Wacom_Input.c
 // Userland Wacom tablet driver for X11 (WACOM IV serial protocol)
 // J.Beale 01-DEC-2020   github.com/jbeale1
 
@@ -16,15 +17,13 @@
 #include <termios.h>
 #include <unistd.h>
 
-
 #include <stdint.h>
 #include <signal.h>
-// #include <argp.h>
 #include <sys/types.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
 
-#define SERPORT  "/dev/ttyUSB0"  // tablet serial device name
+#define SERPORT  "/dev/ttyUSB0"  // tablet serial device port
 #define PACKETSIZE 7             // basic Wacom IV packet without tilt
 
 #define die(str, args...) do { \
@@ -35,13 +34,12 @@
 // ===================================================================
 // Global Variables
 // ================================================================== 
-// struct mouse_event	   Buffer    	= {0};
-// t_serial 		         *rDev 		= NULL;
 int                     sd;  // serial tablet input port
 int                    	fd;  // X11 input device descriptor
 struct uinput_user_dev 	uidev;
 struct input_event     	ev;
-int verbose = 0;                // 1 to display X,Y,... data
+int verbose = 0;       // 1 to display X,Y,... data
+int pThresh = 15;      // pen pressure threshold for B1 button-press
 
 // ==================================================================
 // Signal and Exit Handler
@@ -126,6 +124,7 @@ void parsePacket(unsigned char pkt[])
      int zp = (pkt[6]&0x3f) + px*0x40*(pkt[6]<0x40);  // pen pressure          
      int b1 = (pkt[3] & 0x10) == 0x10; // Button 1 
      int b2 = (pkt[3] & 0x20) == 0x20; // Button 2 (& eraser)
+     if (zp > pThresh) b1 = 1;  // force button on by tip pressure
      
       /// (x,y), presure, button1, button2/eraser, proximity
      if (verbose) {
