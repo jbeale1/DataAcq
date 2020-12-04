@@ -1,6 +1,10 @@
 // Userland Wacom serial tablet driver for X11 (WACOM IV protocol)
-// pressure-sensing stylus works with MyPaint on Raspberry Pi
-// ver. 0.2  J.Beale 02-DEC-2020   github.com/jbeale1
+// pressure-sensing stylus works with GIMP, MyPaint on Raspberry Pi
+
+// 01-DEC-2020: v.1 basic x/y + 2 buttons
+// 02-DEC-2020: v.2 added pressure
+// 04-DEC-2020: v.3 added tilt
+// J.Beale 04-DEC-2020   github.com/jbeale1
 
 // Based on this reference data and code:
 // -------------------------------------------------------------------
@@ -29,9 +33,15 @@
 #include <linux/input.h>
 #include <linux/uinput.h>
 
+#define VERSION "Wacom ArtZ II serial driver v0.3 04-DEC-2020A"
+
 #define SERPORT  "/dev/ttyUSB0"  // tablet serial device port
-#define PACKETSIZE 7             // basic Wacom IV packet without tilt
-#define DEVICENAME "stylus"      // name appearing to X11 driver
+#define WBYTES1 7  // 7 bytes in basic Wacom IV data packet
+#define WBYTES2 9  // 9 bytes if X,Y tilt is enabled
+#define DEVICENAME "stylus"  // xinput name  
+
+// AFAIK Gimp won't recoginize it, unless it's named "stylus"
+// MyPaint can work with other names
 
 #define die(str, args...) do { \
         perror(str); \
@@ -45,11 +55,21 @@ int                     sd;  // serial tablet input port
 int                    	fd;  // X11 input device descriptor
 struct uinput_user_dev 	uidev;  // for inputdevice setup
 struct input_event     	ev;
-int verbose = 0;       // 1 to display X,Y,... data
-int pThresh = 8;      // pen pressure threshold for B1 button-press
-int pOffset = 3;      // zero-pressure offset reading on stylus
+
+int debug = 0;           // print out raw packet bytes
+int tilt = 1;            // 1 enables tilt mode, 0 for basic no-tilt
+int packetsize = WBYTES1; // # of bytes in packet depends on mode
+int verbose = 0;         // 1 to display X,Y,... data
+int pThresh = 8;         // pen pressure threshold for B1 button-press
+int pOffsetMax = 15;     // max reasonable zero-pressure stylus offset
+int pOffsetMin = 0;      // minimum stylus pressure reading this session
+int pOffsetFuzz = 2;     // noise level on pressure offset
+int pOffset = 0;         // current stylus pressure offset
 int xResolution = 1200;  // tablet resolution, pixels per inch
 int yResolution = 1200;  // tablet resolution, pixels per inch
+int Ymin = 1920;  // limit tablet Ymin for 4:3 tablet and 16:9 screen
+int Ymax = 7680;  // ArtZ II tablet Y axis max value
+    
 
 // ==================================================================
 // Signal and Exit Handler
@@ -126,16 +146,47 @@ void set_mincount(int fd1, int mcount)
 void parsePacket(unsigned char pkt[])
 {
      // show raw 7-byte Wacom-IV packet in hex
-     // for (unsigned int j=0;j<7;j++) printf("%02x ",pkt[j]);
+     if (debug) {
+       for (int j=0;j<packetsize;j++) 
+         printf("%02x ",pkt[j]);
+       printf("\n");
+     }
      
-     int px = ((pkt[0] & 0x40) == 0x40);  // 1 = pen in range
+     // as stylus moves up out of sense range, you get one last packet
+     // with Byte 0, Bit 6 set to 0
+     
+     int tx,tx1 = 0;  // X,Y tilt value
+     int ty,ty1 = 0;
+     
+     int px = ((pkt[0] & 0x40) == 0x40);  // 1 = pen in range 
      int xp = pkt[1]*128 + pkt[2];        // X coordinate
      int yp = pkt[4]*128 + pkt[5];        // Y coordinate
-     int zp = (pkt[6]&0x3f) + px*0x40*(pkt[6]<0x40);  // pen pressure          
+     yp += Ymin/2;                        // center active Y window
+     if (yp > Ymax) yp = Ymax;  // force Y values inside active window
+     if (yp < Ymin) yp = Ymin;
      int b1 = (pkt[3] & 0x10) == 0x10; // Button 1 
      int b2 = (pkt[3] & 0x20) == 0x20; // Button 2 (& eraser)
-     int contact = 0;
+     int zp = (pkt[6]&0x3f) + px*0x40*(pkt[6]<0x40);  // pen pressure
+     if (tilt) {
+       tx = pkt[7]; // 7-bit signed int, -63..0..+63 (0x3f)
+       ty = pkt[8];
+       if (tx > 63) tx-=64;
+       else tx += 64; // convert to 0..127 with center being 63
+       if (ty > 63) ty-=64;  
+       else ty += 64;
+       // printf("%03d,%03d\n",tx,ty); // DEBUG show values
+     }
+
+     if (px == 0) {   // hack for pressure sensor drift and noise
+         pOffsetMin = pOffsetMax;  // reset as stylus goes out of range
+     } else {
+         if (zp < pOffsetMin)  // track minimum value read this session
+           pOffsetMin = px;
+         pOffset = pOffsetMin + pOffsetFuzz;
+     }
      zp -= pOffset;  // fix a zero-pressure +offset on stylus
+
+     int contact = 0;
      if (zp < 0) zp = 0;
      if (zp > 0) contact = 1;           // any force at all
      // if (zp > pThresh) b1 = 1;  // force button on by tip pressure
@@ -158,6 +209,23 @@ void parsePacket(unsigned char pkt[])
      ev.value = yp;
      if(write(fd, &ev, sizeof(struct input_event)) < 0)
                   die("error: write");
+
+     if (tilt) {
+       memset(&ev, 0, sizeof(struct input_event));
+       ev.type = EV_ABS;
+       ev.code = ABS_TILT_X;
+       ev.value = tx;
+       if(write(fd, &ev, sizeof(struct input_event)) < 0)
+                  die("error: TILT_X write");
+
+       memset(&ev, 0, sizeof(struct input_event));
+       ev.type = EV_ABS;
+       ev.code = ABS_TILT_Y;
+       ev.value = ty;
+       if(write(fd, &ev, sizeof(struct input_event)) < 0)
+                  die("error: TILT_Y write");
+
+     }
                   
             /// tablet stylus pressure
      memset(&ev, 0, sizeof(struct input_event));
@@ -199,6 +267,7 @@ void parsePacket(unsigned char pkt[])
      if(write(fd, &ev, sizeof(struct input_event)) < 0)
                   die("error: write");                 
 
+
               /// All done with this data readout
      memset(&ev, 0, sizeof(struct input_event));
      ev.type = EV_SYN;
@@ -206,7 +275,8 @@ void parsePacket(unsigned char pkt[])
      ev.value = 0;
      if(write(fd, &ev, sizeof(struct input_event)) < 0)
                   die("error: write");
-}
+                  
+} // end parsePacket()
 
  
 // ==================================================================
@@ -247,10 +317,10 @@ int init_device(int fd)
     uidev.id.bustype = BUS_USB;
     //uidev.id.vendor  = 0x056a;  // Wacom
     //uidev.id.product = 0x00f4;
-    uidev.id.vendor = 0x01;
-    uidev.id.product = 0x01;
+    uidev.id.vendor = 0x00;
+    uidev.id.product = 0x00;
     uidev.id.version = 1;
-    //uidev.ff_effects_max = 0;  // no idea what this is
+    //uidev.ff_effects_max = 0;  // what is this?
 
 // from KDE wacomtablet project 
 // phabricator.kde.org/file/data/hj5om5upujwlln7bcz4u/PHID-FILE-osc4kcwgj2hkdlfslneq/file
@@ -264,10 +334,11 @@ int init_device(int fd)
     xabs.absinfo.resolution = xResolution;  // pixels per inch
     xabs.absinfo.value = 0;
 
+    // use subset of tablet Y range, to match 16:9 screen aspect ratio
     struct uinput_abs_setup yabs;
     yabs.code = ABS_Y;
-    yabs.absinfo.minimum = 0;
-    yabs.absinfo.maximum = 7680;  // Y range of tablet
+    yabs.absinfo.minimum = Ymin; // limit min range to 1920
+    yabs.absinfo.maximum = Ymax;  // Y range of tablet
     yabs.absinfo.fuzz = 0;
     yabs.absinfo.flat = 0;
     yabs.absinfo.resolution = yResolution;  // pixels per inch
@@ -281,6 +352,7 @@ int init_device(int fd)
     pressure.absinfo.flat = 0;
     pressure.absinfo.resolution = 0;
     pressure.absinfo.value = 0;
+    
      
     if(write(fd, &uidev, sizeof(uidev)) < 0)
         die("error: UI Device Setup");
@@ -293,6 +365,31 @@ int init_device(int fd)
       die("Y setup");
     if (ioctl(fd, UI_ABS_SETUP, &pressure) < 0)
       die("pressure setup");
+
+    if (tilt) {
+     struct uinput_abs_setup xtilt;
+     xtilt.code = ABS_TILT_X;
+     xtilt.absinfo.minimum = 0;
+     xtilt.absinfo.maximum = 127;  // x tilt range of tablet
+     xtilt.absinfo.fuzz = 0;
+     xtilt.absinfo.flat = 0;
+     xtilt.absinfo.resolution = 0;
+     xtilt.absinfo.value = 0;
+
+     struct uinput_abs_setup ytilt;
+     ytilt.code = ABS_TILT_Y;
+     ytilt.absinfo.minimum = 0;
+     ytilt.absinfo.maximum = 127;  // y tilt range of tablet
+     ytilt.absinfo.fuzz = 0;
+     ytilt.absinfo.flat = 0;
+     ytilt.absinfo.resolution = 0;
+     ytilt.absinfo.value = 0;
+     
+     if (ioctl(fd, UI_ABS_SETUP, &xtilt) < 0)
+      die("X Tilt setup");
+     if (ioctl(fd, UI_ABS_SETUP, &ytilt) < 0)
+      die("Y Tilt setup");
+    }
     
     if(ioctl(fd, UI_DEV_CREATE) < 0)
         die("error: device creation");
@@ -309,6 +406,7 @@ int main()
     char *portname = SERPORT;
     int wlen;
 
+    printf("%s\n",VERSION);
 	uid_t uid=getuid();   /// Check Permisions
 	if (uid != 0) {
 		fprintf (stderr,"Must be run as root or with sudo!\n");
@@ -322,7 +420,6 @@ int main()
     // char *xstr = "~R\r";    // report config
     // char *xstr = "FM1\r";   // enable tilt protocol (9-byte packet)
     
-    int xlen = strlen(xstr);
 
     sd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
     if (sd < 0) {
@@ -333,13 +430,27 @@ int main()
     set_interface_attribs(sd, B9600); // 9600 baud 8-N-1
     //set_mincount(sd, 0);            // set to pure timed read
 
-    wlen = write(sd, xstr, xlen);  // send a command to serial device
+    if (tilt) packetsize = WBYTES2;  // extended Wacom IV with X,Y tilt
+    else packetsize = WBYTES1;       // basic Wacom IV protocol, no tilt
+
+    int xlen = strlen(xstr);   
+    wlen = write(sd, xstr, xlen);  // send cmd to serial device
     if (wlen != xlen) {
         printf("Error from write: %d, %d\n", wlen, errno);
     }
     tcdrain(sd);    // delay for output
             
-	/// Fire Up UINPUT for X11 logical input device
+	if (tilt) {  // set up extended mode for including X,Y tilt
+      char *tstr = "FM1\r";   // enable tilt protocol (9-byte packet)
+      int tlen = strlen(tstr);   
+      wlen = write(sd, tstr, tlen);  // send command 
+      if (wlen != tlen) {
+        printf("Error from write: %d, %d\n", wlen, errno);
+      }
+      tcdrain(sd);    // delay for output        
+    }
+    
+    /// Fire Up UINPUT for X11 logical input device
 	fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
     if(fd < 0)
         die("error: open");
@@ -364,13 +475,13 @@ int main()
                 if (*p & 0x80) i=0; // b7 is start-of-packet flag
                 pkt[i++] = *p;      // add this byte to packet
                 
-                if (i > PACKETSIZE) {
+                if (i > packetsize) {
                     printf("Packet Error, length=%d\n",i);
                     i=0;
                 }
             } 
             
-            if (i == PACKETSIZE) {       // complete packet received
+            if (i == packetsize) {       // complete packet received
               parsePacket(pkt);  // extract the data and take action
               i = 0;
             }
