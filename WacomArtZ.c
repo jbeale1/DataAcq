@@ -33,7 +33,7 @@
 #include <linux/input.h>
 #include <linux/uinput.h>
 
-#define VERSION "Wacom ArtZ II serial driver v0.3 04-DEC-2020A"
+#define VERSION "Wacom ArtZ II serial driver v0.3 04-DEC-2020"
 
 #define SERPORT  "/dev/ttyUSB0"  // tablet serial device port
 #define WBYTES1 7  // 7 bytes in basic Wacom IV data packet
@@ -177,11 +177,12 @@ void parsePacket(unsigned char pkt[])
        // printf("%03d,%03d\n",tx,ty); // DEBUG show values
      }
 
-     if (px == 0) {   // hack for pressure sensor drift and noise
-         pOffsetMin = pOffsetMax;  // reset as stylus goes out of range
+     // hack to supress pressure sensor drift and noise
+     if (px == 0) {    // stylus just went out of range?
+         pOffsetMin = pOffsetMax;  // reset each time stylus goes away
      } else {
-         if (zp < pOffsetMin)  // track minimum value read this session
-           pOffsetMin = px;
+         if (zp < pOffsetMin) // track minimum value of this session
+           pOffsetMin = zp;
          pOffset = pOffsetMin + pOffsetFuzz;
      }
      zp -= pOffset;  // fix a zero-pressure +offset on stylus
