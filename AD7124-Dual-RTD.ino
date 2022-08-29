@@ -1,5 +1,5 @@
 //  Arduino code for Analog Devices 24-bit ADC AD7124
-//  using library https://github.com/epsilonrt/ad7124
+//  using epsilonRT library https://github.com/epsilonrt/ad7124
 
 //  reads out temperature from two 100-ohm RTD sensors in 3-wire mode
 //  driven by the 2 current sources in the AD7124
@@ -12,7 +12,7 @@
 //  see: analog.com cn0383.pdf Figure 21 (multiple 3-wire RTD config)
 
 //  AD7124 chip is connected on the Arduino MOSI, MISO, SCK and /SS pins (pin 10)
-//  -- J.Beale 21-Aug-2022
+//  -- J.Beale 28-Aug-2022
 
 #include <ad7124.h>
 
@@ -20,6 +20,9 @@ using namespace Ad7124;
 
 const int ssPin = 10;  // AD7124 chip select pin
 Ad7124Chip adc;
+
+double R01 = 99.10;  // R0 calibration resistance of RTD #1
+double R02 = 99.65;  // R0 calibration resistance of RTD #2
 
 // -----------------------------------------------------------------------------
 void setup() {
@@ -32,21 +35,43 @@ void setup() {
   adc.setConfigFilter (0, Sinc4Filter, 2047);  // 2047 = 2.34 Hz output rate
   adc.setAdcControl (SingleConvMode, FullPower, true);
   adc.setConfig (0, RefIn1, Pga32, false); // Config 0, 'false' => unipolar, straight-binary output  
+
+  //adc.setChannel (0, 0, AIN2Input, AIN3Input);  // chan0, config0, input  AIN2(+)/AIN3(-)
+  //adc.internalCalibration (0);
+  //adc.setChannel (0, 0, AIN4Input, AIN5Input);  // chan0, config0, input  (+)/(-)
+  //adc.internalCalibration (0);
+
+  
   // adc.setCurrentSource (ch, ch, CurrentOff);  // turn off bias currents
 }
 
 
 // convert RTD resistance in ohms to temperature in deg.C
-double RtoC(double Rt) {
+double RtoC(double Rt, double Ro) {
 
   const double A = 3.9083E-3;    // Callendar-Van Dusen coefficient A
   const double B = -5.775E-7;    // Callendar-Van Dusen coefficient B
-  const double Ro = 100.0;       // RTD resistance at 0 C
+  // const double Ro = 100.0;       // RTD resistance at 0 C
   double degC = (sqrt(A*A - 4*B*(1-(Rt/Ro))) - A) / (2*B);  // valid only for T > 0 C
   return (degC);
 }
 
+int showRegs() {
+
+  Serial.println("--- AD7124 registers ----");
+  for (int id=0; id < 57; id++) { 
+    int reg =  adc.getRegister (id);
+    Serial.print(id);
+    Serial.print(": ");
+    Serial.println(reg, HEX);
+  }
+  Serial.println("-------------------");
+  return 0;
+}
+
 // -----------------------------------------------------------------------------
+
+
 
 void loop() {
   
@@ -61,7 +86,11 @@ void loop() {
 
   long code_adc = adc.read (0);  // single-conversion ADC reading
   double Rt = (code_adc / code_max) * (2*Rref / gain_PGA); // 3-wire setup: 2x RTD current flows through Rref
-  double degC1 = RtoC(Rt);  // convert resistance to temperature
+  double degC1 = RtoC(Rt,R01);  // convert resistance to temperature
+
+  //Serial.println("Channel 1: ");
+  //showRegs();
+  //delay(1000);
 
 // --------------------------------------------------------------------------
   adc.setChannel (0, 0, AIN4Input, AIN5Input);  // chan0, config0, input  (+)/(-)
@@ -70,9 +99,14 @@ void loop() {
 
   code_adc = adc.read (0);  // single-conversion ADC reading
   Rt = (code_adc / code_max) * (2*Rref / gain_PGA); // 3-wire setup: 2x RTD current flows through Rref
-  double degC2 = RtoC(Rt);  // convert resistance to temperature
+  double degC2 = RtoC(Rt,R02);  // convert resistance to temperature
 
+  //Serial.println("Channel 2: ");
+  //showRegs();
+  //delay(10000);
+  
   Serial.print(degC1,6);   // calculated RTD temperature in degrees C
   Serial.print(", ");  
   Serial.println(degC2,6);   // calculated RTD temperature in degrees C
 }
+/* ========================================================================== */
