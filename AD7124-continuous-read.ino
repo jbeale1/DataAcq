@@ -5,7 +5,7 @@
 #include <SPI.h>  // uses the SPI library
 
 const int CSPin = 10;              // goes to AD7124 CS/ pin
-const int DRDY = 8;                // connect pin D8 to D12 externally
+const int DRDY = 8;                // connect pin Teensy4 pin D8 to pin D12 externally
 const int clockspeed = 2'000'000;  // SPI clock in Hz
 
 // Size in bytes of each AD7124 on-chip register
