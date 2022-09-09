@@ -1,17 +1,17 @@
-// simple continuous-read test program for AD7124
-// tested on Teensy 4.0
-// J.Beale 9-Sep-2022
+// Continuous read mode on Analog Devices AD7124-8 24-bit ADC
+// tested on Teensy 4.0     by J.Beale 9-Sep-2022
 
 #include <SPI.h>  // uses the SPI library
 
 const int CSPin = 10;              // goes to AD7124 CS/ pin
-const int DRDY = 8;                // connect pin Teensy4 pin D8 to pin D12 externally
+const int DRDY = 8;                // connect Teensy4 pin D8 to pin D12 
 const int clockspeed = 2'000'000;  // SPI clock in Hz
 
-// Size in bytes of each AD7124 on-chip register
+// Size in bytes of each of the 57 addressable on-chip registers
 uint8_t reglen[] = {
   1,2,3,3,2,1,3,3,1,  // control, data, and status regs
-  2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,   // Channel_0 to _15
+  2,2,2,2,2,2,2,2,                    // Channel_0 to _7
+  2,2,2,2,2,2,2,2,                    // Channel_8 to _15
   2,2,2,2,2,2,2,2,                    // Config_0 to _7
   3,3,3,3,3,3,3,3,                    // Filter_0 to _7
   3,3,3,3,3,3,3,3,                    // Offset_0 to _7
@@ -19,13 +19,14 @@ uint8_t reglen[] = {
 };
 
 // ------------------------------------------------------------------
-void resetChip();  // software reset of AD7124 chip
-void readADReg(int address, int bytes, long *word); // read AD712 register
-void readCont(long *word); // read in continuous mode, waits on DOUT/RDY*
+void resetChip();                             // software reset of AD7124 chip
+void readADReg(int addr, int n, long *word);  // read AD7124 register
+void readCont(long *word);      // read in continuous mode, waits on DOUT/RDY*
 
 void setup() {
   Serial.begin(115200);
-  delay(5000);
+  delay(1000);
+  
   pinMode (CSPin, OUTPUT);
   pinMode(DRDY, INPUT);  // also SPI MISO; monitor for data ready
   SPI.begin(); 
@@ -79,14 +80,22 @@ void loop() {
     delayMicroseconds(2);
   }
   
-  resetChip();
+  resetChip();  // reset, wait, repeat
   delay(10000);
   
 } // end loop()
 
 // =================================================================
 
-// read up to 4 bytes from <address> register in AD7124
+void resetChip() {  // send 64 clocks for software reset
+  digitalWrite(CSPin,LOW);
+  for (int i=0; i<8; i++) {      
+      SPI.transfer(0xFF);
+  }
+  digitalWrite(CSPin,HIGH); 
+}
+
+// read up to 4 bytes from register <address> in AD7124
 void readADReg(int address, int bytes, long *word) {
   *word = 0;
   digitalWrite(CSPin,LOW);
@@ -98,19 +107,11 @@ void readADReg(int address, int bytes, long *word) {
   digitalWrite(CSPin,HIGH); 
 }
 
-void resetChip() {  // send 64 clocks for software reset
-  digitalWrite(CSPin,LOW);
-  for (int i=0; i<8; i++) {      
-      SPI.transfer(0xFF);
-  }
-  digitalWrite(CSPin,HIGH); 
-}
-
 // assumes that CS is already low to select chip
 // read AD7124 Data in "ContinuousRead" mode, as soon as DRDY/ pin goes low
 void readCont(long *word) {
   *word = 0;
-  while (digitalRead(DRDY) == LOW) {  // wait if chip still ready from last time
+  while (digitalRead(DRDY) == LOW) {  // wait if chip still ready from last cycle
       delayMicroseconds(1);
     }
   while (digitalRead(DRDY) == HIGH) {  // wait for chip to be ready
