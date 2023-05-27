@@ -122,12 +122,14 @@ int main(void)
 
   void process_adc_data(void) {
       // calculate statistics on data in buffer
+      char out_buffer[800];  // for sending text to USB serial device
 
 	  long datSum = 0;  // reset our accumulated sum of input values to zero
       int sMax = 0;
       int sMin = 65535;
       long n;            // count of how many readings so far
-      double x,mean,delta,m2,variance,stdev;  // to calculate standard deviation
+      short int x;
+      double mean,delta,m2,variance,stdev;  // to calculate standard deviation
 
       n = 0;     // have not made any ADC readings yet
       mean = 0; // start off with running mean at zero
@@ -156,15 +158,27 @@ int main(void)
       	if (x > tHigh) sAbove++;
       	if (x < tLow) sBelow++;
       }
-      pingReady = True;  // signal to DMA it is OK to refill it  now
+
+      int i=0;
+      int bp = 0;
+      int ccount;
+      do {
+		  ccount = sprintf(&out_buffer[bp],"%d\n", ping_buffer[i]);
+		  bp += ccount;
+		  i++;
+      } while (i < ADC_BUFFER_SIZE/2);
+      // CDC_Transmit_FS((uint8_t*)out_buffer,ccount);
+
 
       float sf = (sMax - sMin) / stdev; // ratio of peak-peak noise to stdev
-      char out_buffer[80];
-      int ccount = sprintf(out_buffer,"%d, %d, %d, %5.3f, %5.3f, %d,%d, %5.1f\n",
+      ccount = sprintf(&out_buffer[bp],"%d, %d, %d, %5.3f, %5.3f, %d,%d, %5.1f\n",
     		  loopctr, sMin, sMax, mean, stdev, sAbove/100, sBelow/100, sf);
-      CDC_Transmit_FS((uint8_t*)out_buffer,ccount);
+	  bp += ccount;
+      CDC_Transmit_FS((uint8_t*)out_buffer,bp);
 
       loopctr++;
+      pingReady = True;  // signal to DMA it is OK to refill buffer now
+
   }
 
 
