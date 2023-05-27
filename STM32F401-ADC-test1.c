@@ -32,7 +32,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define ADC_BUFFER_SIZE 20000  // how many uint16 words in ADC buffer; max ~ 20k
+#define False 0
+#define True 1
+
+#define ADC_BUFFER_SIZE 100  // how many uint16 words in ADC buffer; max ~ 20k
 
 /* USER CODE END PD */
 
@@ -49,6 +52,12 @@ RTC_HandleTypeDef hrtc;
 
 /* USER CODE BEGIN PV */
 volatile uint16_t adc_buffer[ADC_BUFFER_SIZE];
+volatile uint16_t ping_buffer[ADC_BUFFER_SIZE/2];
+volatile uint16_t pong_buffer[ADC_BUFFER_SIZE/2];
+
+volatile uint8_t pingReady = 1; // if first buffer ready for next fill
+volatile uint8_t pongReady = 1; // if second buffer ready for next fill
+
 int loopctr = 0;
 
 /* USER CODE END PV */
@@ -71,6 +80,8 @@ static void MX_RTC_Init(void);
 /**
   * @brief  The application entry point.
   * @retval int
+  * =============================================================================
+  *
   */
 int main(void)
 {
@@ -123,8 +134,8 @@ int main(void)
       m2 = 0;
 
       // from http://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
-      for (int i=0;i<ADC_BUFFER_SIZE;i++) {
-    	x = adc_buffer[i];
+      for (int i=0;i<ADC_BUFFER_SIZE/2;i++) {
+    	x = ping_buffer[i];
         datSum += x;
         if (x > sMax) sMax = x;
         if (x < sMin) sMin = x;
@@ -140,11 +151,12 @@ int main(void)
       int sBelow = 0; // count of samples below 1 stdev below mean
       int tHigh = mean + stdev;
       int tLow = mean - stdev;
-      for (int i=0;i<ADC_BUFFER_SIZE;i++) {
-      	x = adc_buffer[i];
+      for (int i=0;i<ADC_BUFFER_SIZE/2;i++) {
+      	x = ping_buffer[i];
       	if (x > tHigh) sAbove++;
       	if (x < tLow) sBelow++;
       }
+      pingReady = True;  // signal to DMA it is OK to refill it  now
 
       float sf = (sMax - sMin) / stdev; // ratio of peak-peak noise to stdev
       char out_buffer[80];
@@ -164,10 +176,14 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 
 
+  for (int i=0;i<2;i++){
+	  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 0);  // GPIO13 LOW => turn on the onboard blue LED
+	  HAL_Delay(2000);
+	  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 1);  // turn it off
+	  HAL_Delay(500);
+  }
+
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, ADC_BUFFER_SIZE);
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 0);  // GPIO13 LOW => turn on the onboard blue LED
-  HAL_Delay(1000);
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 1);  // turn it off
 
   while (1)
   {
@@ -395,6 +411,27 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+// Called when first half of buffer is filled
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
+  if (pingReady) {
+	// copy over first half of DMA buff
+	for(int i=0; i<ADC_BUFFER_SIZE/2; i++) ping_buffer[i] = adc_buffer[i];
+	pingReady = False;
+  }
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 0);  // GPIO13 LOW => turn on the onboard blue LED
+}
+
+// Called when buffer is completely filled
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
+  if (pongReady) {
+	  // copy over second half of DMA buff
+	for(int i=0; i<ADC_BUFFER_SIZE/2; i++) pong_buffer[i] = adc_buffer[i+ADC_BUFFER_SIZE/2];
+	pongReady = False;
+  }
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 1);  // turn off LED
+
+}
 
 /* USER CODE END 4 */
 
