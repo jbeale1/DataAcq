@@ -22,7 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,7 +32,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define ADC_BUFFER_SIZE 100  // how many uint16 words in ADC circular buffer
+#define ADC_BUFFER_SIZE 20000  // how many uint16 words in ADC buffer; max ~ 20k
 
 /* USER CODE END PD */
 
@@ -110,18 +110,53 @@ int main(void)
   // also increment global loop counter
 
   void process_adc_data(void) {
-    // Process the ADC data, for example, calculate the average value:
-    uint32_t sum = 0;
-    for (size_t i = 0; i < ADC_BUFFER_SIZE; i++) {
-      sum += adc_buffer[i];
-    }
-    uint16_t average = sum / ADC_BUFFER_SIZE;
+      // calculate statistics on data in buffer
 
-    char out_buffer[80];
-    int ccount = sprintf(out_buffer,"ADC %d: %d\n", loopctr, average);
-    CDC_Transmit_FS((uint8_t*)out_buffer,ccount);
-    loopctr++;
+	  long datSum = 0;  // reset our accumulated sum of input values to zero
+      int sMax = 0;
+      int sMin = 65535;
+      long n;            // count of how many readings so far
+      double x,mean,delta,m2,variance,stdev;  // to calculate standard deviation
+
+      n = 0;     // have not made any ADC readings yet
+      mean = 0; // start off with running mean at zero
+      m2 = 0;
+
+      // from http://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
+      for (int i=0;i<ADC_BUFFER_SIZE;i++) {
+    	x = adc_buffer[i];
+        datSum += x;
+        if (x > sMax) sMax = x;
+        if (x < sMin) sMin = x;
+        n++;
+        delta = x - mean;
+        mean += delta/n;
+        m2 += (delta * (x - mean));
+      }
+      variance = m2/(n-1);  // (n-1):Sample Variance  (n): Population Variance
+      stdev = sqrt(variance);  // Calculate standard deviation
+
+      int sAbove = 0; // count of samples more than 1 stdev above mean
+      int sBelow = 0; // count of samples below 1 stdev below mean
+      int tHigh = mean + stdev;
+      int tLow = mean - stdev;
+      for (int i=0;i<ADC_BUFFER_SIZE;i++) {
+      	x = adc_buffer[i];
+      	if (x > tHigh) sAbove++;
+      	if (x < tLow) sBelow++;
+      }
+
+      float sf = (sMax - sMin) / stdev; // ratio of peak-peak noise to stdev
+      char out_buffer[80];
+      int ccount = sprintf(out_buffer,"%d, %d, %d, %5.3f, %5.3f, %d,%d, %5.1f\n",
+    		  loopctr, sMin, sMax, mean, stdev, sAbove/100, sBelow/100, sf);
+      CDC_Transmit_FS((uint8_t*)out_buffer,ccount);
+
+      loopctr++;
   }
+
+
+
 
   /* USER CODE END 2 */
 
@@ -130,15 +165,13 @@ int main(void)
 
 
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, ADC_BUFFER_SIZE);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 0);  // GPIO13 LOW => turn on the onboard blue LED
+  HAL_Delay(1000);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 1);  // turn it off
 
   while (1)
   {
-	  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 0);
-	  HAL_Delay(1000);
-	  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 1);
-	  HAL_Delay(1000);
 	  process_adc_data();
-	  // loopctr++;  // this is done in process_adc_data()
 
     /* USER CODE END WHILE */
 
@@ -232,7 +265,7 @@ static void MX_ADC1_Init(void)
 
   /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
   */
-  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = 1;
   sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
