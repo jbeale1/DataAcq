@@ -6,12 +6,9 @@
   ******************************************************************************
   * @attention
   *
-  * Copyright (c) 2023 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
+  * Count zero-crossings of analog input signal
+  * using STM32F401CCU6 dev board
+  * J.Beale 27-May-2023
   *
   ******************************************************************************
   */
@@ -32,10 +29,12 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define False 0
-#define True 1
+#define FALSE 0
+#define TRUE 1
 
-#define ADC_BUFFER_SIZE 100  // how many uint16 words in ADC buffer; max ~ 20k
+#define ADC_BUFFER_SIZE 8000  // how many uint16 words in ADC buffer; max ~ 20k
+#define DECIMATION 200  // average together this many raw samples
+#define PING_BUFFER_SIZE (ADC_BUFFER_SIZE / (2 * DECIMATION))
 
 /* USER CODE END PD */
 
@@ -51,12 +50,21 @@ DMA_HandleTypeDef hdma_adc1;
 RTC_HandleTypeDef hrtc;
 
 /* USER CODE BEGIN PV */
-volatile uint16_t adc_buffer[ADC_BUFFER_SIZE];
-volatile uint16_t ping_buffer[ADC_BUFFER_SIZE/2];
-volatile uint16_t pong_buffer[ADC_BUFFER_SIZE/2];
 
-volatile uint8_t pingReady = 1; // if first buffer ready for next fill
-volatile uint8_t pongReady = 1; // if second buffer ready for next fill
+volatile uint16_t adc_buffer[ADC_BUFFER_SIZE];
+volatile uint32_t ping_buffer[2][PING_BUFFER_SIZE];
+
+volatile uint8_t pingLoaded[2] = {FALSE, FALSE}; // if ping-pong buffers filled from DMA
+volatile uint8_t pingReady[2] = {TRUE, TRUE}; // if buffers processed & ready for next fill
+//unsigned int pp = 0;      // ping-pong buffer index: 0 = ping, 1 = pong
+
+// these globals variables should not need to be volatile
+float dc_avg = -1;  // very-low-pass-filtered version of signal
+float lpval = -1;   // slightly low-pass filtered version
+int last_sign = 0;  // previous sign of signal trend (1,0,-1 = up, constant, down)
+float lpfilt1 = 0.001;  // fractional LP filter constant for long-term DC average
+float lpfilt2 = 0.85;     // LP filter for fast-moving value
+unsigned int zero_crossings = 0;  // how many total zero crossings
 
 int loopctr = 0;
 
@@ -80,8 +88,6 @@ static void MX_RTC_Init(void);
 /**
   * @brief  The application entry point.
   * @retval int
-  * =============================================================================
-  *
   */
 int main(void)
 {
@@ -120,24 +126,30 @@ int main(void)
   // send it out USB serial device
   // also increment global loop counter
 
-  void process_adc_data(void) {
+  void process_adc_data(unsigned char pp) {
       // calculate statistics on data in buffer
       char out_buffer[800];  // for sending text to USB serial device
+
 
 	  long datSum = 0;  // reset our accumulated sum of input values to zero
       int sMax = 0;
       int sMin = 65535;
       long n;            // count of how many readings so far
-      short int x;
+      uint32_t x;
       double mean,delta,m2,variance,stdev;  // to calculate standard deviation
 
       n = 0;     // have not made any ADC readings yet
       mean = 0; // start off with running mean at zero
       m2 = 0;
 
+      if (dc_avg < 0) {
+    	  dc_avg = ping_buffer[pp][PING_BUFFER_SIZE/2];  // initialize very first time
+    	  lpval = dc_avg;
+      }
+
       // from http://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
-      for (int i=0;i<ADC_BUFFER_SIZE/2;i++) {
-    	x = ping_buffer[i];
+      for (int i=0;i<PING_BUFFER_SIZE;i++) {
+    	x = ping_buffer[pp][i];
         datSum += x;
         if (x > sMax) sMax = x;
         if (x < sMin) sMin = x;
@@ -153,31 +165,49 @@ int main(void)
       int sBelow = 0; // count of samples below 1 stdev below mean
       int tHigh = mean + stdev;
       int tLow = mean - stdev;
-      for (int i=0;i<ADC_BUFFER_SIZE/2;i++) {
-      	x = ping_buffer[i];
+      for (int i=0;i<PING_BUFFER_SIZE;i++) {
+       	x = ping_buffer[pp][i];
+      	dc_avg = (x * lpfilt1) + dc_avg * (1.0-lpfilt1);  // rolling average low-pass-filter
+      	lpval = (x * lpfilt2) + lpval * (1.0-lpfilt2);    // faster low-pass-filter
       	if (x > tHigh) sAbove++;
       	if (x < tLow) sBelow++;
+      	int x_sign = 0;
+    	if (lpval > (dc_avg + 3*stdev)) {
+    		x_sign = 1;
+    	}
+    	if (lpval < (dc_avg - 3*stdev)){
+    		x_sign = -1;
+    	}
+		if (abs(x_sign - last_sign) == 2) {
+			zero_crossings++;
+		}
+		if (x_sign != 0) last_sign = x_sign;
+
       }
 
       int i=0;
       int bp = 0;
       int ccount;
+
       do {
-		  ccount = sprintf(&out_buffer[bp],"%d\n", ping_buffer[i]);
+		  ccount = sprintf(&out_buffer[bp],"%ld\n", (long int)ping_buffer[pp][i]);
 		  bp += ccount;
 		  i++;
-      } while (i < ADC_BUFFER_SIZE/2);
+      } while (i < PING_BUFFER_SIZE);
       // CDC_Transmit_FS((uint8_t*)out_buffer,ccount);
 
 
       float sf = (sMax - sMin) / stdev; // ratio of peak-peak noise to stdev
-      ccount = sprintf(&out_buffer[bp],"%d, %d, %d, %5.3f, %5.3f, %d,%d, %5.1f\n",
-    		  loopctr, sMin, sMax, mean, stdev, sAbove/100, sBelow/100, sf);
+      ccount = sprintf(&out_buffer[bp],"%d, %d, %5.3f, %5.3f, %d,%d, %5.1f, %5.3f,  %d\n",
+    		  sMin, sMax, mean, stdev, sAbove, sBelow, sf, dc_avg, zero_crossings);
 	  bp += ccount;
       CDC_Transmit_FS((uint8_t*)out_buffer,bp);
 
       loopctr++;
-      pingReady = True;  // signal to DMA it is OK to refill buffer now
+	  // HAL_Delay(10);  // just for debug convenience
+
+      pingReady[pp] = TRUE;  // signal to DMA it is OK to refill buffer now
+      pingLoaded[pp] = FALSE; // data is not fresh
 
   }
 
@@ -201,7 +231,8 @@ int main(void)
 
   while (1)
   {
-	  process_adc_data();
+      if (pingLoaded[0]) process_adc_data(0);
+      if (pingLoaded[1]) process_adc_data(1);
 
     /* USER CODE END WHILE */
 
@@ -248,7 +279,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV16;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
@@ -277,7 +308,7 @@ static void MX_ADC1_Init(void)
   /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
   */
   hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV8;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.ScanConvMode = DISABLE;
   hadc1.Init.ContinuousConvMode = ENABLE;
@@ -428,23 +459,38 @@ static void MX_GPIO_Init(void)
 
 // Called when first half of buffer is filled
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
-  if (pingReady) {
-	// copy over first half of DMA buff
-	for(int i=0; i<ADC_BUFFER_SIZE/2; i++) ping_buffer[i] = adc_buffer[i];
-	pingReady = False;
-  }
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 0);  // GPIO13 LOW => turn on the onboard blue LED
+	int p=0;
+    if (pingReady[p]) {
+		// copy over first half of DMA buff
+		for(int i=0; i<PING_BUFFER_SIZE; i++) {
+			int sum = 0;
+			for (int j=0; j<DECIMATION; j++) {
+				sum += adc_buffer[i*DECIMATION + j];
+			}
+			ping_buffer[p][i] = sum;
+		}
+		pingLoaded[p] = TRUE;  // now contains fresh data
+		pingReady[p] = FALSE;  // data buffer not yet processed
+	    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 0);  // GPIO13 LOW => turn on the onboard blue LED
+	}
 }
 
 // Called when buffer is completely filled
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
-  if (pongReady) {
-	  // copy over second half of DMA buff
-	for(int i=0; i<ADC_BUFFER_SIZE/2; i++) pong_buffer[i] = adc_buffer[i+ADC_BUFFER_SIZE/2];
-	pongReady = False;
-  }
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 1);  // turn off LED
-
+	int p = 1;
+    if (pingReady[p]) {
+		// copy over first half of DMA buff
+		for(int i=0; i<PING_BUFFER_SIZE; i++) {
+			int sum = 0;
+			for (int j=0; j<DECIMATION; j++) {
+				sum += adc_buffer[i*DECIMATION + j];
+			}
+			ping_buffer[p][i] = sum;
+		}
+		pingLoaded[p] = TRUE;  // this buffer now contains fresh data
+		pingReady[p] = FALSE;  // this data buffer not yet processed
+	    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 1);  // turn off LED
+	}
 }
 
 /* USER CODE END 4 */
