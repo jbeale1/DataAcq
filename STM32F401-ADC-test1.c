@@ -31,10 +31,12 @@
 /* USER CODE BEGIN PD */
 #define FALSE 0
 #define TRUE 1
+#define INT_MAX 2147483647  // largest value an INT can have
 
 #define ADC_BUFFER_SIZE 8000  // how many uint16 words in ADC buffer; max ~ 20k
 #define DECIMATION 200  // average together this many raw samples
 #define PING_BUFFER_SIZE (ADC_BUFFER_SIZE / (2 * DECIMATION))
+
 
 /* USER CODE END PD */
 
@@ -50,6 +52,9 @@ DMA_HandleTypeDef hdma_adc1;
 RTC_HandleTypeDef hrtc;
 
 /* USER CODE BEGIN PV */
+
+static int showRaw = FALSE;  // send out raw ADC values via USB/Serial
+static int showStats = TRUE; // send out statistics via USB/Serial
 
 volatile uint16_t adc_buffer[ADC_BUFFER_SIZE];
 volatile uint32_t ping_buffer[2][PING_BUFFER_SIZE];
@@ -133,7 +138,7 @@ int main(void)
 
 	  long datSum = 0;  // reset our accumulated sum of input values to zero
       int sMax = 0;
-      int sMin = 65535;
+      int sMin = INT_MAX;
       long n;            // count of how many readings so far
       uint32_t x;
       double mean,delta,m2,variance,stdev;  // to calculate standard deviation
@@ -189,18 +194,21 @@ int main(void)
       int bp = 0;
       int ccount;
 
-      do {
-		  ccount = sprintf(&out_buffer[bp],"%ld\n", (long int)ping_buffer[pp][i]);
+      if (showRaw) {
+		  do {
+			  ccount = sprintf(&out_buffer[bp],"%ld\n", (long int)ping_buffer[pp][i]);
+			  bp += ccount;
+			  i++;
+		  } while (i < PING_BUFFER_SIZE);
+      }
+
+      if (showStats) {
+		  // print out min/max/mean/stdev stats
+		  float sf = (sMax - sMin) / stdev; // ratio of peak-peak noise to stdev
+		  ccount = sprintf(&out_buffer[bp],"%d, %d, %5.3f, %5.3f, %d,%d, %5.1f, %5.3f,  %d\n",
+				  sMin, sMax, mean, stdev, sAbove, sBelow, sf, dc_avg, zero_crossings);
 		  bp += ccount;
-		  i++;
-      } while (i < PING_BUFFER_SIZE);
-      // CDC_Transmit_FS((uint8_t*)out_buffer,ccount);
-
-
-      float sf = (sMax - sMin) / stdev; // ratio of peak-peak noise to stdev
-      ccount = sprintf(&out_buffer[bp],"%d, %d, %5.3f, %5.3f, %d,%d, %5.1f, %5.3f,  %d\n",
-    		  sMin, sMax, mean, stdev, sAbove, sBelow, sf, dc_avg, zero_crossings);
-	  bp += ccount;
+      }
       CDC_Transmit_FS((uint8_t*)out_buffer,bp);
 
       loopctr++;
@@ -459,13 +467,13 @@ static void MX_GPIO_Init(void)
 
 // Called when first half of buffer is filled
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
-	int p=0;
+	int p=0;  // "ping" half of ping-pong buffer
     if (pingReady[p]) {
 		// copy over first half of DMA buff
 		for(int i=0; i<PING_BUFFER_SIZE; i++) {
 			int sum = 0;
 			for (int j=0; j<DECIMATION; j++) {
-				sum += adc_buffer[i*DECIMATION + j];
+				sum += adc_buffer[i*DECIMATION + j];  // first half of buffer
 			}
 			ping_buffer[p][i] = sum;
 		}
@@ -477,13 +485,13 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
 
 // Called when buffer is completely filled
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
-	int p = 1;
+	int p = 1;  // "pong" half of ping-pong buffer
     if (pingReady[p]) {
-		// copy over first half of DMA buff
+		// copy over second half of DMA buff
 		for(int i=0; i<PING_BUFFER_SIZE; i++) {
 			int sum = 0;
 			for (int j=0; j<DECIMATION; j++) {
-				sum += adc_buffer[i*DECIMATION + j];
+				sum += adc_buffer[(i+PING_BUFFER_SIZE)*DECIMATION + j]; // second half of adc buffer
 			}
 			ping_buffer[p][i] = sum;
 		}
