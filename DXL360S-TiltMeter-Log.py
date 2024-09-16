@@ -1,31 +1,31 @@
-#!/usr/bin/python3
-# Python code to read data via USB serial port on DXL360S 0.01 degree tiltmeter
-# It has nonstandard USB port with no USB signal. 
-# Red and Black are +5V input (battery charge) and GND.
-# There is 3.3V logic UART signal output on USB D- (white wire) referenced to ground.
-# USB D+ (green) may be unused; not clear.
-# By default, module will power off after being still for a while.
-# 2024-Aug-28 J.Beale
+# Read out WitMotion JY-ME02-485 absolute angle encoder
+# (tested to actually have 0.01 degree accuracy, at least for some small angles)
+# J.Beale 9/15/2024
 
-from serial import *
-import time, datetime, os, sys
+# Witmotion Encoder command (9600 bps using USB-RS485 converter)
+# Send this hex byte string:  50 03 00 04 00 20 08 52
+# Receive 69 bytes back. B29,B30 are the 15-bit angle value, B28 is rotation #
+# Receive string always starts with (B0...B5):
+# 50 03 40 00 02 00 
+# encoder resolves 360 degree angular position into 15-bit word: 0000 to 32767
+# data packet also includes angular rate and sensor temperature
 
-LOGDIR = "/home/john/Documents/Spectrometer"
-LOGFILE = "AngleLog.csv"
-PORT = "/dev/ttyUSB0"
-VERSION  = "DXL360S TiltMeter 8/28/2024 JPB"
-CSV_HEADER = "date_time, epoch, reading"
-eol_str = "\n"  # end of line string in file output
+import serial, os
+import time, datetime
+import struct # unpack bytes to int
 
-#timeInterval = 1   # how many seconds between readings
-readingsToAverage = 20  # about 10 readings per second
+averages = 94  # how many readings to average together
 
-# at a rate of x samples per second
-ser=Serial(PORT,9600,8,'N',1,timeout=0.04)  # serial input
-#ser=Serial(PORT,9600,8,'N',1)  # serial input
+maxCounts = 32768 # number of counts from 15-bit sensor (0..maxCounts-1)
+degPerCount = 360.0 / (maxCounts) # angular scale factor of sensor
+
+LOGDIR = r"C:\Users\beale\Documents\Telescope"
+LOGFILE = "AngleEncLog.csv"
+VERSION  = "JY-ME02 Encoder 9/15/2024 JPB"
+CSV_HEADER = "epoch, angle, degC"
+EOL = "\n" # end of line for log file
 
 dstring = datetime.datetime.today().strftime('%Y-%m-%d_%H%M%S_')
-
 fnameout = os.path.join(LOGDIR, (dstring+LOGFILE))
 print("Writing data to %s" % fnameout)
 f = open(fnameout, 'w')  # open log file
@@ -34,65 +34,50 @@ print("%s" % CSV_HEADER)
 f.write ("%s\n" % CSV_HEADER)
 f.write ("# %s\n" % VERSION)
 
-ser.read(255)            # clear out existing buffer & throw it away
-lines = 0                # how many lines we've read
-xSum = 0                # sum of X angle values read so far
-readings = 0            # valid readings so far
-while True:
-    buf = ""
-    t = datetime.datetime.now()
+if __name__ == "__main__":
+    port = 'COM6'  # or '/dev/ttyUSB0' etc. on Linux
+    baudrate = 9600
+    recLen = 69   # number of bytes in response from JYME02
+    # command to encoder to readout angle, angular rate, temperature:
+    cmd_bytes = bytes.fromhex('50 03 00 04 00 20 08 52')  
+    # response packet should start with these bytes:
+    header = bytes.fromhex('50 03 40 00 02 00')
 
-    # DXL360S format: X-1234Y-1234
-    buf = ser.read(12)    # get data packet which should be 12 
-    recCount = len(buf)
-    if (recCount != 12):  # we insist that only 12 characters are acceptable
-        # print(recCount)
-        continue
+    with serial.Serial(port, baudrate, timeout=0.1) as ser:        
+        ser.read(200) # clear out any data in receive buffer
 
-    #print(".",end="")
+        while True:
+            angleSum = 0 # accumulated sum of angle readings
+            tempSum = 0  # accumulated sum of temperature readings (deg.C)
+            validReads = 0 # how many good readings so far
+            while (validReads < averages):            
+                ser.write(cmd_bytes)
+                recData = ser.read(recLen)
+                recCount = len(recData)  
+                firstSix = recData[0:6]              
+                # does response packet look good?
+                if (recCount != recLen) or (firstSix != header):                 
+                    bstr = firstSix.hex()
+                    outs = ("# Receive error: %d: %s\n" % (recCount,bstr))
+                    print(outs)
+                    f.write(outs)
+                    ser.read(200) # clear out any bad data in receive buffer
+                    continue
+                angleR = recData[29:31] # 2 bytes of angle data
+                tempR = recData[35:37]  # 2 bytes of temperature data
+                angle = struct.unpack('>H', angleR)[0] # convert to 16-bit integer                
+                if (angle > (3*maxCounts)/4):  # put split at -90deg
+                    angle = angle-maxCounts
 
-    p1 = buf.find(0x58) # 'X' = 0x58  example string: "X-0005Y-0001"
-    p2 = buf.find(0x59) # 'Y' = 0x59 example string: "X-0005Y-0001"
-    if (p1<0) or (p2 < 0):  # if we couldn't find X and Y, something's wrong.
-        print(buf.decode("utf-8"))
-        print("Data format error: p1: %d  p2: %d" % (p1,p2))
-        continue
+                # temp in integer hundredths of deg.C: 09D9 means 25.21 C
+                temp = struct.unpack('>H', tempR)[0] # convert to 16-bit integer                
+                angleSum += angle
+                tempSum += temp
+                validReads += 1
 
-    tEpoch = (int(time.time()*10))/10.0         # time() = seconds.usec since Unix epoch
-    tNow = datetime.datetime.now()
-
-
-    xString = (buf[p1+1:p2].decode("utf-8")) # angle in +dd.dd format (decimal degrees)
-    yString = (buf[p2+1:].decode("utf-8"))   # angle in +dd.dd format (decimal degrees)
-    if (xString == '') or (yString == ''):
-        continue
-    try:
-        xval = int(xString)
-        yval = int(yString)
-        # print("%d, %d" % (xval,yval))
-        xdeg = xval/100.0  # packet comes in units of 1/100 degree
-        xSum += xdeg
-        readings += 1
-    except Exception as e:
-        print("Unexpected error:", sys.exc_info()[0])
-        print("Input string: %s" % buf.decode("utf-8"))
-
-    if (readings >= readingsToAverage):
-        xdeg = xSum / readings
-        readings = 0
-        xSum = 0
-        buffer = ("%.3f" % (xdeg))
-        
-        # buffer = buf.decode("utf-8").rstrip()         # string terminated with '\n'
-        outbuf = str(datetime.datetime.now())[:-3] + "," + \
-        ("%12.1f" % tEpoch ) + "," + buffer
-        print (outbuf)
-        f.write (outbuf)
-        f.write (eol_str)
-        lines += 1
-        if (lines % 50 == 0):  # save it out to actual file, every so often
-            f.flush()
-
-
-f.close                  # close log file
-ser.close()            # close serial port when done. If we ever are...
+            angleDeg = degPerCount * (angleSum / validReads) # angle in degrees
+            tempC = (tempSum / validReads) / 100.0 # temp in degrees C
+            tEpoch = time.time()
+            outs=("%0.1f, %5.3f, %5.3f" % (tEpoch,angleDeg,tempC))
+            print(outs)
+            f.write(outs+EOL)
