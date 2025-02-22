@@ -2,11 +2,12 @@
 
 # Python 3 code to get readings from Keithley 196 multimeter via GPIB
 # Assumes meter is already set up to correct mode, eg. from front panel
-# 2012-2024 J.Beale
+# 2012-2025 J.Beale
 
 from serial import *
 import time, datetime
 
+VERSION = "Keithley 196 log v0.35 22-Feb-2025 JPB"
 cmdSetup = "+a:22\r".encode('utf-8')     # set which GPIB address for Casagrande GPIB adaptor board to talk with
 
 cmd = "?\r".encode('utf-8')           # GPIB command to Keithley 196 must end with carriage return
@@ -20,9 +21,9 @@ ser=Serial('/dev/ttyUSB0',460800,8,'N',1,timeout=0.5)  # GPIB-USB board on USB1,
 #ser=Serial('/dev/ttyUSB1',460800,8,'N',1,timeout=0.5)  # GPIB-USB board on USB1, with 460800 bps, 8-N-1
 
 f = open('K196-log.csv', 'a')  # open log file
-print ("Keithley 196 log v0.3 3-Nov-2024 JPB")
+print (VERSION)
 f.write ("epoch_time, volts\n")
-f.write ("# Keithley 196 log v0.31 19-Feb-2025 JPB")
+f.write ("# %s" % VERSION)
 
 ser.write(cmdSetup)                 # send setup command to GPIB board 
 ser.read(255)            # clear out existing buffer & throw it away
@@ -37,18 +38,25 @@ while True:
     sleeptime = nSec - ((t.second % nSec) + t.microsecond/1000000.0)
     time.sleep(sleeptime)
     
-    ser.write(cmd)                 # send query to instrument
-    rawbuf = ser.readline()
-    buf = rawbuf.decode()         # string terminated with '\n'
-    if (buf != '') :
-      buffer = buf.split()[0]   # get rid of the \r\n characters at the end
-      trim1 = buffer[4:]        # get rid of the 'NDCV' mode string at the start
-      epoch = time.time()         
-      outbuf = ("%.1f" % epoch) + ', ' + trim1 # assemble output string
-      print (outbuf)
-      f.write (outbuf)
-      f.write (eol_str)
-      time.sleep(0.5)                        # from 'time' to wait this many seconds
-   
+    try:
+      ser.write(cmd)                 # send query to instrument
+      rawbuf = ser.readline()
+      buf = rawbuf.decode()         # string terminated with '\n'
+      if (buf != '') :
+        buffer = buf.split()[0]   # get rid of the \r\n characters at the end
+        trim1 = buffer[4:]        # get rid of the 'NDCV' mode string at the start
+        epoch = time.time()         
+        outbuf = ("%.1f" % epoch) + ', ' + trim1 # assemble output string
+        print (outbuf)
+        f.write (outbuf)
+        f.write (eol_str)
+        time.sleep(0.1)                        # from 'time' to wait this many seconds
+    except Exception as e:
+      if isinstance(e, KeyboardInterrupt):
+        print("\nProgram interrupted by user.")
+        break # Exit the loop if Ctrl+C is pressed
+      else:
+        print(f"Error {e}")
+
 f.close                  # close log file
 ser.close()            # close serial port when done. If we ever are...
