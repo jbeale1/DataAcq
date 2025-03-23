@@ -1,6 +1,6 @@
-// This code belongs to the ADS1256 library developed by Curious Scientist
-// A very detailed documentation can be found at: https://curiousscientist.tech/ads1256-custom-library 
-// mods by J.Beale 22-Feb-2025
+//This code belongs to the ADS1256 library developed by Curious Scientist
+//A very detailed documentation can be found at: https://curiousscientist.tech/ads1256-custom-library 
+// mods by J.Beale 22-Mar-2025
 
 #include <ADS1256.h>
 
@@ -25,6 +25,7 @@ char inputMode = ' '; //can be 's' and 'd': single-ended and differential
 
 int pgaValues[7] = {PGA_1, PGA_2, PGA_4, PGA_8, PGA_16, PGA_32, PGA_64}; //Array to store the PGA settings
 int pgaSelection = 0; //Number used to pick the PGA value from the above array
+byte buf[1024];  // buffer to hold packet-length binary readings
 
 int drateValues[16] =
 {
@@ -76,7 +77,7 @@ void setup()
     ; //Wait until the serial becomes available
   }
 
-  Serial.println("ADS1256 - Custom Library Demo File by Curious Scientist - 2023-11-10");
+  Serial.println("ADS1256 Monitor: Curious Scientist / JPB - 2025-03-22");
 
   A.InitializeADC(); //See the documentation for every details
   //Setting up CS, RESET, SYNC and SPI
@@ -195,6 +196,38 @@ void loop()
         }
         A.stopConversion();
         break;
+      //--------------------------------------------------------------------------------------------------------
+      case 'J': //Read a single input continuously and send binary packet of N samples (J15 = 15-word packet)
+        {
+          while (!Serial.available());
+          int sampleCount = Serial.parseInt(); // Parse the number of samples to average
+          long n;            // count of how many readings so far 
+          long last;         // previous value         
+          int p;
+          int32_t value;     // number to write to output
+          while (Serial.read() != 's') // stopped by a character from the serial port
+          {   
+              for (int i=0;i<sampleCount;i++) {
+                p = 4*i;
+                int32_t raw = A.readSingleContinuous();  // analog reading in raw counts
+                if (i==0) {
+                  value = raw;
+                } else {
+                  value = raw - last;
+                }
+                last = raw;
+                buf[p] = (byte) (value >> 24);   // convert 4-byte long into separate bytes
+                buf[p+1] = (byte) (value >> 16); 
+                buf[p+2] = (byte) (value >> 8); 
+                buf[p+3] = (byte) value; 
+                delayMicroseconds(50);  // annoying extra delay needed for DRDY line to return inactive
+              }
+              Serial.write(buf, sampleCount*4);   // send the N sample data packet
+          }
+        }
+        A.stopConversion();
+        break;
+
       //--------------------------------------------------------------------------------------------------------
       case 'C': //Cycle single ended inputs (A0+GND, A1+GND ... A7+GND)
         while (Serial.read() != 's')//The conversion is stopped by a character received from the serial port
