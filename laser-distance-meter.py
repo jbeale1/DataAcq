@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Laser Rangefinder Serial Communication
+DFRobot SEN0366 Laser Rangefinder Serial Communication
 Communicates with a laser rangefinder over serial port to read distance measurements.
-Device: https://www.aliexpress.us/item/3256805197937779.html
-20hz High Accuracy 80m Laser Sensor Range Finder Distance Measuring Module TTL Interface Ardunio
+Logs distance readings to a CSV file with timestamp, average, standard deviation, range, 
+and trend.
 
 """
 
@@ -229,9 +229,9 @@ def main():
         print("No port specified, exiting.")
         return
     
-    MEASUREMENT_INTERVAL = 0  # seconds between measurements
-    WINDOW_SIZE = 20  # Number of recent readings for statistics
-    TREND_LOOKBACK = 20  # seconds to look back for trend calculation
+    MEASUREMENT_INTERVAL = 0  # added delay between measurements (0 => 0.75s per reading)
+    WINDOW_SIZE = 60  # Number of recent readings for statistics
+    TREND_LOOKBACK = 60  # seconds to look back for trend calculation
     
     # Create CSV filename with current date and time
     current_time = datetime.now()    
@@ -253,7 +253,7 @@ def main():
     
     # Storage for historical averages (timestamp, average) for trend calculation
     # Keep about 30 seconds of history (assuming ~0.75s intervals, that's ~40 entries)
-    historical_averages = deque(maxlen=50)
+    historical_averages = deque(maxlen=150)
     
     try:
         # Open CSV file for writing
@@ -270,7 +270,7 @@ def main():
             
             measurement_count = 0
             consecutive_failures = 0
-            MAX_CONSECUTIVE_FAILURES = 5  # Exit after 5 consecutive failures
+            MAX_CONSECUTIVE_FAILURES = 20  # Exit after 5 consecutive failures
             
             while True:
                 measurement_count += 1
@@ -319,7 +319,7 @@ def main():
                         trend_str = f"{trend_mm:.3f}" if trend_mm is not None else "0"
                         
                         # Print to console
-                        print(f"{epoch_time},{measurement_count},{distance_value:.4f},{avg:.6f},{std_mm:.3f},{range_mm:.3f},{trend_str}")
+                        print(f"{epoch_time},{measurement_count},{distance_value:.4f},{avg:.6f},{std_mm:.3f},{range_mm:.1f},{trend_str}")
                         
                         # Write to CSV file
                         csv_writer.writerow([
@@ -340,6 +340,7 @@ def main():
                         print(error_line)
                         # csv_writer.writerow([epoch_time, measurement_count, "ERROR", "", "", "", ""])
                         csvfile.flush()
+                        time.sleep(2)  # Wait a bit longer after error
                 else:
                     # Increment failure counter
                     consecutive_failures += 1
@@ -347,7 +348,8 @@ def main():
                     print(error_line)
                     # csv_writer.writerow([epoch_time, measurement_count, "ERROR", "", "", "", ""])
                     csvfile.flush()
-                    
+                    time.sleep(2)  # Wait a bit longer after error
+
                     # Check if we should exit due to too many consecutive failures
                     if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                         print(f"\nExiting: {MAX_CONSECUTIVE_FAILURES} consecutive communication failures detected.")
@@ -371,3 +373,4 @@ if __name__ == "__main__":
     print("Laser Rangefinder Distance Reader with 20-Second Trend Analysis")
     print("=" * 60)
     main()
+    
